@@ -122,8 +122,18 @@
     .prev-info-row { display:flex; gap:20px; font-size:0.9rem; }
     .prev-info-item span:first-child { color:var(--sub); font-size:0.8rem; }
     .prev-info-item span:last-child  { font-weight:700; margin-left:4px; }
+    .day-status-panel { margin:0 0 16px; padding:14px; border:1px solid #bfdbfe; border-radius:12px; background:#eff6ff; }
+    .day-status-title { color:#1e3a8a; font-size:.88rem; font-weight:900; }
+    .day-status-description { margin:5px 0 11px; color:#475569; font-size:.76rem; line-height:1.5; }
+    .day-status-current { margin-bottom:10px; color:#64748b; font-size:.74rem; font-weight:800; }
+    .day-status-current.active { color:#047857; }
+    .day-status-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .day-status-choice { min-height:46px; border:1px solid #93c5fd; border-radius:10px; background:#fff; color:#1e40af; font:inherit; font-size:.8rem; font-weight:900; cursor:pointer; }
+    .day-status-choice.active { border-color:#047857; background:#d1fae5; color:#047857; box-shadow:inset 0 0 0 1px #047857; }
+    .day-status-clear { width:100%; min-height:42px; margin-top:8px; border:0; border-radius:9px; background:transparent; color:#b91c1c; font:inherit; font-size:.76rem; font-weight:800; cursor:pointer; }
+    .day-status-disabled { opacity:.55; }
 
-    .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(20px); background:#1e293b; color:#fff; padding:12px 24px; border-radius:30px; font-size:0.9rem; font-weight:600; opacity:0; transition:all .3s; z-index:9999; white-space:nowrap; }
+    .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(20px); background:#1e293b; color:#fff; padding:12px 24px; border-radius:30px; font-size:0.9rem; font-weight:600; opacity:0; transition:all .3s; z-index:9999; white-space:nowrap; pointer-events:none; }
     .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
     .empty { text-align:center; padding:30px; color:var(--sub); font-size:0.9rem; }
@@ -186,11 +196,26 @@
     .storage-meter { background:#e2e8f0; height:8px; border-radius:999px; overflow:hidden; margin-top:5px; }
     .storage-meter > div { height:100%; background:var(--primary); width:0; transition:width .2s; }
     .trend-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; height:150px; align-items:end; margin-top:8px; }
+    .trend-scroll { overflow-x:auto; padding-bottom:4px; }
+    .trend-grid.monthly { grid-template-columns:repeat(7,1fr); height:auto; min-width:0; gap:6px; }
+    .usage-calendar-weekday { padding:4px 0; color:var(--sub); font-size:.68rem; font-weight:900; text-align:center; }
+    .usage-calendar-day { min-height:66px; padding:7px 5px; border:1px solid var(--border); border-radius:9px; background:#fff; display:flex; flex-direction:column; justify-content:space-between; }
+    .usage-calendar-day.has-usage { border-color:#fdba74; background:#fff7ed; }
+    .usage-calendar-day.today { box-shadow:inset 0 0 0 1px var(--brand-orange); }
+    .usage-calendar-day.empty { visibility:hidden; }
+    .usage-calendar-date { color:var(--sub); font-size:.68rem; font-weight:800; }
+    .usage-calendar-hours { color:var(--brand-navy); font-size:.72rem; font-weight:900; text-align:right; }
     .trend-col { height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:5px; min-width:0; }
     .trend-bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; }
     .trend-bar { width:70%; min-height:2px; background:linear-gradient(180deg,var(--primary-light),var(--primary)); border-radius:6px 6px 2px 2px; }
     .trend-value { font-size:.68rem; font-weight:700; color:var(--primary); }
     .trend-label { font-size:.68rem; color:var(--sub); }
+    .trend-card-title { flex-wrap:wrap; }
+    #usage-trend-title { flex:1; min-width:0; text-transform:none; letter-spacing:0; }
+    .trend-range-toggle { display:flex; gap:6px; margin-left:auto; }
+    .trend-range-button { min-height:32px; padding:0 9px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:var(--sub); font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
+    .trend-range-button.active { border-color:var(--brand-orange); background:#fff4eb; color:#c2410c; }
+    .btn-admin-mode { background:#0d1b3d; color:#fff; }
     .online-status { font-size:.72rem; font-weight:700; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.18); white-space:nowrap; }
     .kpi.complete::before { background:linear-gradient(90deg,#10b981,#6ee7b7); }
     .kpi.missing::before { background:linear-gradient(90deg,#ef4444,#fca5a5); }
@@ -269,8 +294,6 @@
     .brand-title-on { color:var(--brand-orange); }
     .brand-title-suffix { color:rgba(255,255,255,.78); font-size:.68em; font-weight:800; letter-spacing:-.02em; margin-left:8px; }
     .header-action-button { position:relative; display:grid; place-items:center; width:44px; height:44px; border:0; border-radius:12px; color:#fff; background:rgba(255,255,255,.1); cursor:pointer; }
-    .notification-badge { position:absolute; top:4px; right:4px; min-width:18px; height:18px; padding:0 4px; border-radius:999px; display:grid; place-items:center; background:var(--brand-orange); color:#fff; font-size:.65rem; font-weight:900; border:2px solid var(--brand-navy); }
-    .notification-badge.hidden { display:none; }
     .header-subrow { margin-top:10px; }
     .equipment-select { min-height:44px; border-radius:11px; }
     .header-date { display:flex; align-items:center; gap:4px; color:#fff; background:rgba(255,255,255,.1); border-radius:11px; padding:0 8px; min-height:44px; }
@@ -281,54 +304,51 @@
     .content { width:100%; max-width:1440px; margin:0 auto; padding:16px; }
     .driver-home { display:flex; flex-direction:column; gap:16px; }
     .driver-card { background:var(--surface,#fff); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 2px 8px rgba(15,23,42,.035); }
-    .operation-card { border-top:4px solid var(--brand-orange); padding-top:16px; }
+    .operation-card { width:100%; min-width:0; box-sizing:border-box; border-top:4px solid var(--brand-orange); padding-top:16px; }
     .operation-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
     .equipment-identity { display:flex; align-items:center; gap:12px; min-width:0; }
+    .equipment-copy { min-width:0; flex:1; }
     .equipment-visual { width:64px; height:64px; border-radius:16px; background:#eef2ff; color:var(--brand-navy); display:grid; place-items:center; flex-shrink:0; }
-    .equipment-title { font-size:1.12rem; font-weight:900; letter-spacing:-.02em; }
-    .equipment-subtitle { color:var(--sub); font-size:.78rem; line-height:1.5; margin-top:3px; }
+    .equipment-title { font-size:1.12rem; font-weight:900; letter-spacing:-.02em; overflow-wrap:anywhere; }
+    .equipment-subtitle { color:var(--sub); font-size:.78rem; line-height:1.5; margin-top:3px; overflow-wrap:anywhere; }
     .health-badge { display:inline-flex; align-items:center; gap:5px; min-height:28px; padding:5px 9px; border-radius:999px; font-size:.72rem; font-weight:900; white-space:nowrap; }
     .health-available { color:#047857; background:#d1fae5; }
     .health-inspection { color:#b45309; background:#fef3c7; }
     .health-operating { color:#1d4ed8; background:#dbeafe; }
     .health-restricted { color:#b91c1c; background:#fee2e2; }
-    .operation-health-copy { display:flex; align-items:flex-start; gap:9px; padding:13px 14px; margin:15px 0 12px; border-radius:12px; background:#f8fafc; }
-    .operation-health-title { font-size:.9rem; font-weight:900; }
-    .operation-health-detail { color:var(--sub); font-size:.76rem; margin-top:3px; line-height:1.45; }
-    .operation-session { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0; }
-    .session-cell { border:1px solid var(--border); border-radius:11px; padding:10px; background:#fff; }
-    .session-label { color:var(--sub); font-size:.67rem; font-weight:700; }
-    .session-value { display:block; margin-top:4px; font-size:.88rem; font-weight:900; }
-    .maintenance-line { display:flex; align-items:center; gap:7px; color:var(--sub); font-size:.76rem; margin:12px 0; }
+    .health-idle { color:#475569; background:#e2e8f0; }
+    .home-performance { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
     .operation-primary { min-height:56px; border-radius:12px; background:var(--brand-orange); color:#fff; }
     .operation-primary.running { background:var(--brand-navy); }
     .operation-primary.restricted { background:#fee2e2; color:#b91c1c; }
+    .operation-button-stack { display:flex; flex-direction:column; gap:8px; }
+    .operation-secondary { min-height:56px; border-radius:12px; border:1px solid #cbd5e1; background:#f8fafc; color:#334155; }
     .driver-section-title { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
     .driver-section-title h2 { font-size:1rem; font-weight:900; letter-spacing:-.02em; }
     .section-link { border:0; background:transparent; color:var(--brand-orange); min-height:44px; padding:0 4px; font-size:.76rem; font-weight:800; cursor:pointer; }
-    .driver-quick-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-    .driver-quick-action { min-height:92px; border:1px solid var(--border); background:#fff; border-radius:14px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:9px; padding:14px; color:var(--text); font-size:.85rem; font-weight:900; cursor:pointer; text-align:left; }
-    .driver-quick-action .action-icon { width:40px; height:40px; display:grid; place-items:center; border-radius:11px; background:#fff4eb; color:var(--brand-orange); }
-    .driver-quick-action.danger .action-icon { background:#fef2f2; color:var(--danger); }
-    .driver-metric-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-    .driver-metric { min-height:105px; border:1px solid var(--border); border-radius:14px; padding:14px; background:#fff; }
-    .metric-head { display:flex; justify-content:space-between; align-items:center; color:var(--sub); font-size:.72rem; font-weight:800; }
-    .metric-value { margin-top:12px; font-size:1.45rem; font-weight:900; color:var(--brand-navy); letter-spacing:-.03em; }
-    .metric-unit { font-size:.72rem; color:var(--sub); margin-left:3px; }
-    .action-required-list,.recent-activity-list { display:flex; flex-direction:column; gap:9px; }
-    .action-required-item { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; padding:12px; border-radius:12px; border:1px solid var(--border); }
-    .action-required-item.warning { background:#fffaf0; border-color:#fde68a; }
-    .action-required-item.danger { background:#fff5f5; border-color:#fecaca; }
-    .action-required-item.info { background:#eff6ff; border-color:#bfdbfe; }
-    .action-required-copy strong { display:block; font-size:.82rem; }
-    .action-required-copy span { display:block; color:var(--sub); font-size:.72rem; line-height:1.4; margin-top:2px; }
-    .action-required-button { border:0; background:#fff; border-radius:9px; min-height:40px; padding:0 10px; color:var(--brand-navy); font-size:.7rem; font-weight:900; cursor:pointer; }
+    .home-status-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0 16px; }
+    .home-summary-metrics { display:contents; }
+    .home-status-card { min-width:0; min-height:112px; padding:14px; border:1px solid var(--border); border-radius:14px; background:#f8fafc; color:var(--text); text-align:left; cursor:pointer; font:inherit; }
+    .home-metric-card { cursor:default; }
+    .home-status-head { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--sub); font-size:.73rem; font-weight:900; }
+    .home-status-head .ui-icon { color:var(--brand-orange); }
+    .home-status-value { display:block; margin-top:12px; color:var(--brand-navy); font-size:1.02rem; font-weight:900; letter-spacing:-.02em; }
+    .home-status-detail { display:block; margin-top:5px; color:var(--sub); font-size:.7rem; line-height:1.4; }
+    .recent-activity-list { display:flex; flex-direction:column; gap:9px; }
     .recent-activity { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:11px; padding:11px 0; border-bottom:1px solid var(--border); cursor:pointer; }
     .recent-activity:last-child { border-bottom:0; }
     .activity-icon { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background:#f1f5f9; color:var(--brand-navy); }
     .activity-title { font-size:.82rem; font-weight:900; }
     .activity-detail { margin-top:3px; color:var(--sub); font-size:.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .activity-time { color:var(--sub); font-size:.72rem; font-variant-numeric:tabular-nums; }
+    .work-records { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+    .work-records-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .work-records-title { font-size:.88rem; font-weight:900; }
+    .work-record-list { display:flex; flex-direction:column; gap:8px; }
+    .work-record-item { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:11px 12px; border:1px solid var(--border); border-radius:11px; background:#f8fafc; }
+    .work-record-item strong { display:block; font-size:.8rem; }
+    .work-record-item span { display:block; margin-top:3px; color:var(--sub); font-size:.72rem; }
+    .work-record-edit { min-height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:var(--brand-navy); font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
     .driver-empty { text-align:center; color:var(--sub); padding:22px 10px; font-size:.8rem; }
     .secondary-card { box-shadow:none; }
     .mobile-bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:150; display:grid; grid-template-columns:repeat(5,1fr); min-height:72px; padding:5px max(8px,env(safe-area-inset-left)) max(5px,env(safe-area-inset-bottom)); background:rgba(255,255,255,.98); border-top:1px solid var(--border); box-shadow:0 -4px 18px rgba(15,23,42,.08); }
@@ -345,16 +365,12 @@
     @keyframes skeleton { to { transform:translateX(100%); } }
     :focus-visible { outline:3px solid rgba(255,106,0,.35); outline-offset:2px; }
     @media (min-width:768px) {
-      .driver-quick-grid,.driver-metric-grid { grid-template-columns:repeat(4,1fr); }
       .operation-card { padding:24px; }
       .driver-home-lower { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
       .mobile-bottom-nav { width:min(720px,calc(100% - 32px)); left:50%; right:auto; transform:translateX(-50%); bottom:12px; border:1px solid var(--border); border-radius:18px; }
     }
     @media (min-width:1200px) {
-      .driver-home { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(340px,.8fr); align-items:start; }
-      .operation-card,.driver-performance,.driver-secondary { grid-column:1; }
-      .driver-quick-section { grid-column:1; }
-      .driver-side { grid-column:2; grid-row:1 / span 4; }
+      .driver-home { display:flex; flex-direction:column; }
     }
     @media (max-width:520px) {
       .date-pill { padding:6px 9px; }
@@ -366,7 +382,7 @@
       .content { padding:12px; }
       .driver-card { padding:15px; }
       .equipment-visual { width:54px; height:54px; }
-      .operation-head { align-items:center; }
+      .operation-head { align-items:flex-start; gap:8px; }
       .health-badge { max-width:104px; white-space:normal; text-align:center; }
       .header-date input { width:94px; }
     }
@@ -412,7 +428,6 @@
     <div class="header-actions">
       <button class="header-action-button" type="button" onclick="navigateBottom('alerts')" aria-label="알림 보기">
         <svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg>
-        <span class="notification-badge hidden" id="notification-count">0</span>
       </button>
       <button class="header-action-button" type="button" onclick="openSettings()" aria-label="사용자 및 설정">
         <svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg>
@@ -454,51 +469,38 @@
         <div class="operation-head">
           <div class="equipment-identity">
             <div class="equipment-visual" id="driver-equipment-visual" aria-hidden="true"></div>
-            <div>
+            <div class="equipment-copy">
               <div class="equipment-title" id="summary-equipment-name">장비를 등록해주세요</div>
               <div class="equipment-subtitle" id="summary-equipment-meta">장비 정보가 없습니다.</div>
             </div>
           </div>
           <span class="health-badge health-inspection" id="driver-health-badge">상태 확인 중</span>
         </div>
-        <div class="operation-health-copy">
-          <svg class="ui-icon" id="driver-health-icon" aria-hidden="true"><use href="#icon-shield"></use></svg>
-          <div><div class="operation-health-title" id="driver-health-title">장비 상태를 확인하고 있습니다.</div><div class="operation-health-detail" id="driver-health-detail">잠시만 기다려주세요.</div></div>
-        </div>
-        <div class="operation-session">
-          <div class="session-cell"><span class="session-label">오늘 기록</span><strong class="session-value" id="driver-operation-state">미입력</strong></div>
-          <div class="session-cell"><span class="session-label">전일 시간계</span><strong class="session-value" id="driver-operation-elapsed">기록 없음</strong></div>
-          <div class="session-cell"><span class="session-label">전일 거리계</span><strong class="session-value" id="driver-operation-start">기록 없음</strong></div>
-        </div>
-        <div class="maintenance-line"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-wrench"></use></svg><span id="driver-maintenance-due">등록된 다음 점검 일정이 없습니다.</span></div>
-        <button class="btn operation-primary" id="driver-operation-button" type="button" onclick="handleOperationPrimaryAction()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>오늘 운행 기록 입력</span></button>
-      </section>
 
-      <section class="driver-card driver-quick-section">
-        <div class="driver-section-title"><h2>빠른 기록</h2></div>
-        <div class="driver-quick-grid">
-          <button class="driver-quick-action" type="button" onclick="switchTab('work')"><span class="action-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg></span><span>작업 기록</span></button>
-          <button class="driver-quick-action" type="button" onclick="switchTab('fuel')"><span class="action-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fuel"></use></svg></span><span>주유 기록</span></button>
-          <button class="driver-quick-action" type="button" onclick="openInspectionModal()"><span class="action-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield"></use></svg></span><span>점검하기</span></button>
-          <button class="driver-quick-action danger" type="button" onclick="openFaultModal()"><span class="action-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-alert"></use></svg></span><span>고장 신고</span></button>
+        <div class="home-performance">
+          <div class="driver-section-title"><h2>오늘 실적</h2><span class="hint" id="driver-metric-date">오늘 기준</span></div>
+          <div class="home-status-grid" id="home-status-overview">
+            <div class="home-summary-metrics" id="driver-metrics"></div>
+            <button class="home-status-card" type="button" onclick="switchTab('fuel')">
+              <span class="home-status-head"><span>주유 현황</span><svg class="ui-icon small" aria-hidden="true"><use href="#icon-fuel"></use></svg></span>
+              <strong class="home-status-value" id="driver-fuel-status-value">기록 없음</strong>
+              <span class="home-status-detail" id="driver-fuel-status-detail">주유 기록을 추가할 수 있습니다.</span>
+            </button>
+            <button class="home-status-card" type="button" onclick="switchTab('maint')">
+              <span class="home-status-head"><span>정비 현황</span><svg class="ui-icon small" aria-hidden="true"><use href="#icon-wrench"></use></svg></span>
+              <strong class="home-status-value" id="driver-maint-status-value">기록 없음</strong>
+              <span class="home-status-detail" id="driver-maint-status-detail">등록된 다음 점검 일정이 없습니다.</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="operation-button-stack">
+          <button class="btn operation-primary" id="driver-operation-button" type="button" onclick="handleOperationPrimaryAction()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>오늘 운행 기록 입력</span></button>
+          <button class="btn operation-primary" id="driver-work-button" type="button" onclick="switchTab('work')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg><span>작업 기록 입력</span></button>
+          <button class="btn operation-primary" id="driver-fuel-button" type="button" onclick="switchTab('fuel')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fuel"></use></svg><span>주유 기록 입력</span></button>
+          <button class="btn operation-primary" id="driver-maint-button" type="button" onclick="switchTab('maint')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wrench"></use></svg><span>정비 기록 입력</span></button>
         </div>
       </section>
-
-      <section class="driver-card driver-performance">
-        <div class="driver-section-title"><h2>오늘 실적</h2><span class="hint" id="driver-metric-date">오늘 기준</span></div>
-        <div class="driver-metric-grid" id="driver-metrics"></div>
-      </section>
-
-      <div class="driver-side">
-        <section class="driver-card" id="driver-alert-section">
-          <div class="driver-section-title"><h2>확인 필요</h2></div>
-          <div class="action-required-list" id="driver-action-list"></div>
-        </section>
-        <section class="driver-card" style="margin-top:16px">
-          <div class="driver-section-title"><h2>최근 기록</h2><button class="section-link" type="button" onclick="switchTab('trend')">모든 기록 보기</button></div>
-          <div class="recent-activity-list" id="driver-recent-list"></div>
-        </section>
-      </div>
 
       <section class="driver-card secondary-card submission-card driver-secondary">
       <div class="submission-head">
@@ -529,7 +531,7 @@
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg>계기 기록 입력</div>
 
       <div class="prev-info">
-        <div class="prev-info-title">전일 기준값</div>
+        <div class="prev-info-title" id="prev-record-date">최근 계기 기록</div>
         <div class="prev-info-row">
           <div class="prev-info-item">
             <span>시간계</span><span id="prev-hm-val">기록 없음</span>
@@ -539,6 +541,19 @@
           </div>
         </div>
       </div>
+
+      <div class="day-status-panel" id="day-status-panel">
+        <div class="day-status-title">오늘 운행하지 않았나요?</div>
+        <p class="day-status-description">계기값을 반복 입력하지 않고 날짜를 완료 처리합니다. 다음 운행일에는 가장 최근 계기 기록을 이어서 계산합니다.</p>
+        <div class="day-status-current" id="day-status-current">운행하지 않은 날만 선택하세요.</div>
+        <div class="day-status-actions">
+          <button class="day-status-choice" id="btn-day-holiday" type="button">휴무로 기록</button>
+          <button class="day-status-choice" id="btn-day-no-operation" type="button">무운행으로 기록</button>
+        </div>
+        <button class="day-status-clear hidden" id="btn-clear-day-status" type="button">휴무·무운행 상태 해제</button>
+      </div>
+
+      <div id="usage-entry-fields">
 
       <div class="input-row">
         <div class="form-group">
@@ -580,6 +595,7 @@
       </div>
 
       <button class="btn btn-primary" id="btn-save-usage">계기 기록 저장</button>
+      </div>
     </div>
   </div>
 
@@ -629,6 +645,14 @@
       </div>
 
       <button class="btn btn-success" id="btn-save-work">작업 기록 저장</button>
+
+      <div class="work-records">
+        <div class="work-records-head">
+          <span class="work-records-title">당일 작업 목록</span>
+          <button class="work-record-edit" id="btn-new-work" type="button">새 작업 추가</button>
+        </div>
+        <div class="work-record-list" id="work-record-list"></div>
+      </div>
     </div>
   </div>
 
@@ -715,6 +739,12 @@
         <label class="form-label">다음 점검일 (선택)</label>
         <input class="form-input" id="inp-maint-next-date" type="date">
       </div>
+      <div class="form-group">
+        <label class="form-label">정비 사진 (선택, 증빙용)</label>
+        <input type="file" accept="image/*" id="inp-maint-photo" style="display:none">
+        <button class="btn-upload" id="btn-maint-photo-pick" type="button"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-camera"></use></svg> 정비 사진 촬영/첨부</button>
+        <div class="photo-preview" id="maint-photo-preview" style="display:none"><img id="maint-photo-img" alt="정비 사진"><button class="photo-remove-btn" id="btn-maint-photo-remove" type="button" aria-label="정비 사진 삭제">×</button></div>
+      </div>
       <button class="btn btn-warning" id="btn-save-maint">정비 기록 저장</button>
     </div>
   </div>
@@ -722,8 +752,8 @@
   <!-- 이력 탭 -->
   <div class="tab-panel" id="tab-trend">
     <div class="card">
-      <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg>최근 7일 사용시간</div>
-      <div class="trend-grid" id="usage-trend"></div>
+      <div class="card-title trend-card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg><span id="usage-trend-title">최근 7일 사용시간</span><span class="trend-range-toggle"><button class="trend-range-button active" id="trend-range-week" type="button">최근 7일</button><button class="trend-range-button" id="trend-range-month" type="button">월별</button></span></div>
+      <div class="trend-scroll"><div class="trend-grid" id="usage-trend"></div></div>
     </div>
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-list"></use></svg>장비 기록 이력</div>
@@ -731,6 +761,7 @@
         <select class="form-select" id="history-type">
           <option value="all">전체 기록</option>
           <option value="usage">사용</option>
+          <option value="off">휴무·무운행</option>
           <option value="work">작업</option>
           <option value="fuel">주유</option>
           <option value="maint">정비</option>
@@ -810,6 +841,7 @@
       <select class="form-select" id="admin-history-type">
         <option value="all">전체 기록</option>
         <option value="usage">사용</option>
+        <option value="off">휴무·무운행</option>
         <option value="work">작업</option>
         <option value="fuel">주유</option>
         <option value="maint">정비</option>
@@ -882,12 +914,34 @@
 <div id="more-modal" class="modal-overlay hidden">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="more-title">
     <div class="card-title" id="more-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-more"></use></svg>더보기</div>
-    <button class="btn btn-primary" type="button" onclick="closeMoreMenu();switchTab('usage')">계기 기록 입력</button>
-    <button class="btn btn-warning" type="button" onclick="closeMoreMenu();switchTab('maint')">정비 기록 입력</button>
     <button class="btn btn-fuel" id="install-header-button" type="button" onclick="closeMoreMenu();openInstallGuide()">장비온 앱 설치</button>
-    <button class="btn btn-success" type="button" onclick="closeMoreMenu();openSettings()">장비 및 데이터 설정</button>
-    <button class="btn btn-plain" type="button" onclick="closeMoreMenu();switchMode('admin')">통합관리 모드</button>
+    <button class="btn btn-admin-mode" type="button" onclick="closeMoreMenu();switchMode('admin')">통합관리 모드</button>
     <button class="btn btn-plain" type="button" onclick="closeMoreMenu()">닫기</button>
+  </div>
+</div>
+
+<!-- 알림 기능 안내 -->
+<div id="alert-coming-soon-modal" class="modal-overlay hidden">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="alert-coming-soon-title">
+    <div class="card-title" id="alert-coming-soon-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-bell"></use></svg>알림 기능 준비 중</div>
+    <p class="modal-hint">장비온 알림은 다음 단계에서 제공될 예정입니다.</p>
+    <div class="checklist-list">
+      <div class="checklist-item"><span class="checklist-label">기록 미입력 알림</span><span class="hint">예정</span></div>
+      <div class="checklist-item"><span class="checklist-label">정비·점검 예정일 알림</span><span class="hint">예정</span></div>
+      <div class="checklist-item"><span class="checklist-label">고장·운행 제한 알림</span><span class="hint">예정</span></div>
+    </div>
+    <button class="btn btn-primary" type="button" onclick="closeAlertComingSoon()">확인</button>
+  </div>
+</div>
+
+<!-- 사진 출처 선택 -->
+<div id="photo-source-modal" class="modal-overlay hidden">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="photo-source-title">
+    <div class="card-title" id="photo-source-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-camera"></use></svg>사진 추가</div>
+    <p class="modal-hint">사진을 가져올 방법을 선택하세요.</p>
+    <button class="btn btn-primary" type="button" onclick="choosePhotoSource('camera')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>카메라 촬영</button>
+    <button class="btn btn-fuel" type="button" onclick="choosePhotoSource('album')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>앨범에서 선택</button>
+    <button class="btn btn-plain" type="button" onclick="closePhotoSourcePicker()">취소</button>
   </div>
 </div>
 
@@ -1583,6 +1637,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="/app.js?v=2.1.1"></script>
+<script src="./app.js?v=3.2.0"></script>
 </body>
 </html>
