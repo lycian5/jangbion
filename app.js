@@ -2151,6 +2151,24 @@
     navigator.clipboard.writeText(url).then(() => showToast('주소를 복사했습니다.')).catch(() => showToast(`주소: ${url}`));
   }
 
+  function showAppUpdateNotice() {
+    $('app-update-banner')?.classList.add('show');
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) showAppUpdateNotice();
+    });
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        if (registration.waiting) showAppUpdateNotice();
+        registration.update().catch(() => {});
+      })
+      .catch(error => console.warn('서비스워커 등록 실패', error));
+  }
+
   function bindEvents() {
     const resetLegacyControl = id => {
       const original = $(id);
@@ -2223,6 +2241,7 @@
     $('trend-range-week').addEventListener('click', () => { usageTrendRange = 'week'; renderUsageTrend(); });
     $('trend-range-month').addEventListener('click', () => { usageTrendRange = 'month'; renderUsageTrend(); });
     $('trend-type').addEventListener('change', event => { usageTrendType = event.target.value; renderUsageTrend(); });
+    $('btn-apply-update').addEventListener('click', () => window.location.reload());
     $('history-type').addEventListener('change', loadHistoryTab);
     $('history-month').addEventListener('change', loadHistoryTab);
     $('admin-history-equipment').addEventListener('change', renderAdminHistory);
@@ -2253,7 +2272,7 @@
     if (!localStorage.getItem(PLAN_NOTICE_KEY) && !isInstallHandoffEntry() && !isAndroidKakaoBrowser()) {
       setTimeout(() => openFreePlanGuide('welcome'), 350);
     }
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(error => console.warn('서비스워커 등록 실패', error));
+    registerServiceWorker();
   }
 
   Object.assign(window, {

@@ -305,6 +305,10 @@
     .header-date input { width:108px; border:0; background:transparent; color:#fff; font:inherit; font-size:.75rem; font-weight:800; color-scheme:dark; }
     .offline-banner { display:none; max-width:1440px; margin:8px auto 0; padding:9px 12px; border-radius:10px; background:#fff7ed; color:#9a3412; font-size:.76rem; font-weight:700; }
     .offline-banner.show { display:flex; align-items:center; gap:8px; }
+    .app-update-banner { display:none; max-width:1440px; margin:8px auto 0; padding:10px 12px; border-radius:10px; background:#eff6ff; color:#1d4ed8; font-size:.76rem; font-weight:800; align-items:center; gap:9px; }
+    .app-update-banner.show { display:flex; }
+    .app-update-banner span { flex:1; line-height:1.4; }
+    .app-update-button { flex-shrink:0; min-height:34px; padding:0 10px; border:0; border-radius:8px; background:#1d4ed8; color:#fff; font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
     .mode-switch-bar,.tab-bar { display:none; }
     .content { width:100%; max-width:1440px; margin:0 auto; padding:16px; }
     .driver-home { display:flex; flex-direction:column; gap:16px; }
@@ -449,6 +453,7 @@
     <div class="day-badge hidden" id="dayBadge">목요일</div>
   </div>
   <div class="offline-banner" id="offline-banner"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-alert"></use></svg><span>오프라인 상태입니다. 입력한 기록은 이 기기에 저장됩니다.</span></div>
+  <div class="app-update-banner" id="app-update-banner" role="status"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-install"></use></svg><span>새 버전이 준비되었습니다. 입력 중인 내용이 있으면 저장한 뒤 적용하세요.</span><button class="app-update-button" id="btn-apply-update" type="button">새 버전 적용</button></div>
 </div>
 
 <div class="mode-switch-bar" role="tablist" aria-label="앱 모드">
@@ -1643,6 +1648,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.2.1"></script>
+<script src="./app.js?v=3.2.2"></script>
 </body>
 </html>
