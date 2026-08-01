@@ -215,6 +215,11 @@
     .trend-range-toggle { display:flex; gap:6px; margin-left:auto; }
     .trend-range-button { min-height:32px; padding:0 9px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:var(--sub); font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
     .trend-range-button.active { border-color:var(--brand-orange); background:#fff4eb; color:#c2410c; }
+    .trend-type-select { width:auto; min-width:92px; min-height:32px; padding:0 25px 0 9px; font-size:.72rem; font-weight:900; }
+    .trend-summary { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 4px; }
+    .trend-summary.hidden { display:none; }
+    .trend-summary-item { flex:1; min-width:130px; padding:9px 10px; border-radius:9px; background:#f8fafc; color:var(--sub); font-size:.72rem; font-weight:800; }
+    .trend-summary-item strong { display:block; margin-top:3px; color:var(--brand-navy); font-size:.9rem; }
     .btn-admin-mode { background:#0d1b3d; color:#fff; }
     .online-status { font-size:.72rem; font-weight:700; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.18); white-space:nowrap; }
     .kpi.complete::before { background:linear-gradient(90deg,#10b981,#6ee7b7); }
@@ -752,7 +757,8 @@
   <!-- 이력 탭 -->
   <div class="tab-panel" id="tab-trend">
     <div class="card">
-      <div class="card-title trend-card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg><span id="usage-trend-title">최근 7일 사용시간</span><span class="trend-range-toggle"><button class="trend-range-button active" id="trend-range-week" type="button">최근 7일</button><button class="trend-range-button" id="trend-range-month" type="button">월별</button></span></div>
+      <div class="card-title trend-card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg><span id="usage-trend-title">최근 7일 운행시간</span><select class="form-select trend-type-select" id="trend-type" aria-label="기간별 기록 종류"><option value="usage">운행</option><option value="work">작업</option><option value="fuel">주유</option><option value="maint">정비</option></select><span class="trend-range-toggle"><button class="trend-range-button active" id="trend-range-week" type="button">최근 7일</button><button class="trend-range-button" id="trend-range-month" type="button">월별</button></span></div>
+      <div class="trend-summary hidden" id="trend-summary" aria-live="polite"></div>
       <div class="trend-scroll"><div class="trend-grid" id="usage-trend"></div></div>
     </div>
     <div class="card">
@@ -1637,6 +1643,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.2.0"></script>
+<script src="./app.js?v=3.2.1"></script>
 </body>
 </html>
