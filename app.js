@@ -4,8 +4,10 @@
   const STORAGE_KEY = 'forklift_log_data';
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const DB_VERSION = 6;
+  const APP_VERSION = '3.3.0';
   const MAX_WORK_PHOTOS = 4;
   const APPROX_STORAGE_LIMIT = 5 * 1024 * 1024;
+  const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
   const $ = id => document.getElementById(id);
@@ -186,6 +188,8 @@
   let freePlanGuideSource = 'details';
   let deferredInstallPrompt = null;
   let installCompleted = false;
+  let serviceWorkerRegistration = null;
+  let applyingAppUpdate = false;
   const INSTALL_HANDOFF_PARAM = 'install';
   const INSTALL_HANDOFF_SOURCE_PARAM = 'from';
   const KAKAO_HANDOFF_GUARD = 'jangbion:kakao-chrome-handoff';
@@ -2153,18 +2157,56 @@
 
   function showAppUpdateNotice() {
     $('app-update-banner')?.classList.add('show');
+    $('update-check-status').textContent = '새 버전이 준비되었습니다. 저장 후 “새 버전 적용”을 눌러주세요.';
+  }
+
+  function setUpdateCheckStatus(message) {
+    $('update-check-status').textContent = message;
+  }
+
+  async function checkForAppUpdate(manual = false) {
+    if (!serviceWorkerRegistration) return;
+    if (manual) setUpdateCheckStatus('최신 버전을 확인하고 있습니다.');
+    try {
+      await serviceWorkerRegistration.update();
+      if (serviceWorkerRegistration.waiting) {
+        showAppUpdateNotice();
+      } else if (manual) {
+        setUpdateCheckStatus(`현재 v${APP_VERSION}이 최신 버전입니다.`);
+      }
+    } catch (error) {
+      if (manual) setUpdateCheckStatus('업데이트를 확인하지 못했습니다. 인터넷 연결을 확인해주세요.');
+      console.warn('업데이트 확인 실패', error);
+    }
+  }
+
+  function applyAppUpdate() {
+    const waitingWorker = serviceWorkerRegistration?.waiting;
+    if (!waitingWorker) return window.location.reload();
+    applyingAppUpdate = true;
+    setUpdateCheckStatus('새 버전을 적용하고 있습니다.');
+    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
   }
 
   function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     const hadController = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (applyingAppUpdate) return window.location.reload();
       if (hadController) showAppUpdateNotice();
     });
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
+        serviceWorkerRegistration = registration;
         if (registration.waiting) showAppUpdateNotice();
-        registration.update().catch(() => {});
+        registration.addEventListener('updatefound', () => {
+          const worker = registration.installing;
+          worker?.addEventListener('statechange', () => {
+            if (worker.state === 'installed' && navigator.serviceWorker.controller) showAppUpdateNotice();
+          });
+        });
+        checkForAppUpdate();
+        window.setInterval(checkForAppUpdate, UPDATE_CHECK_INTERVAL);
       })
       .catch(error => console.warn('서비스워커 등록 실패', error));
   }
@@ -2241,14 +2283,16 @@
     $('trend-range-week').addEventListener('click', () => { usageTrendRange = 'week'; renderUsageTrend(); });
     $('trend-range-month').addEventListener('click', () => { usageTrendRange = 'month'; renderUsageTrend(); });
     $('trend-type').addEventListener('change', event => { usageTrendType = event.target.value; renderUsageTrend(); });
-    $('btn-apply-update').addEventListener('click', () => window.location.reload());
+    $('btn-apply-update').addEventListener('click', applyAppUpdate);
+    $('btn-check-update').addEventListener('click', () => checkForAppUpdate(true));
     $('history-type').addEventListener('change', loadHistoryTab);
     $('history-month').addEventListener('change', loadHistoryTab);
     $('admin-history-equipment').addEventListener('change', renderAdminHistory);
     $('admin-history-type').addEventListener('change', renderAdminHistory);
     $('admin-history-month').addEventListener('change', renderAdminHistory);
-    window.addEventListener('online', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
+    window.addEventListener('online', () => { updateOnlineStatus(); checkForAppUpdate(); if (currentMode === 'record') loadSummary(); });
     window.addEventListener('offline', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForAppUpdate(); });
     document.querySelectorAll('.modal-overlay').forEach(modal => modal.addEventListener('click', event => {
       if (event.target === modal) modal.classList.add('hidden');
     }));
@@ -2268,6 +2312,7 @@
     loadSummary();
     updatePlanSummary();
     updateStorageMeter();
+    $('app-version').textContent = `v${APP_VERSION}`;
     handleInstallHandoff();
     if (!localStorage.getItem(PLAN_NOTICE_KEY) && !isInstallHandoffEntry() && !isAndroidKakaoBrowser()) {
       setTimeout(() => openFreePlanGuide('welcome'), 350);

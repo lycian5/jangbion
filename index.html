@@ -972,6 +972,11 @@
       <div class="plan-meter"><div id="plan-equipment-bar"></div></div>
       <button class="plan-detail-button" type="button" onclick="openFreePlanGuide('details')">무료 플랜 자세히 보기 →</button>
     </div>
+    <div class="install-section">
+      <div class="plan-usage"><span>앱 버전</span><strong id="app-version">v3.3.0</strong></div>
+      <button class="btn btn-primary" id="btn-check-update" type="button">업데이트 확인</button>
+      <p class="modal-hint" id="update-check-status" style="margin:10px 0 0">30분마다, 앱으로 돌아오거나 온라인이 되면 최신 버전을 확인합니다.</p>
+    </div>
     <div class="equipment-list" id="equipment-list"></div>
     <button class="btn btn-success" onclick="showEquipmentForm()">＋ 새 장비 등록</button>
     <div id="equipment-form" class="install-section hidden">
@@ -1648,6 +1653,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.2.2"></script>
+<script src="./app.js?v=3.3.0"></script>
 </body>
 </html>

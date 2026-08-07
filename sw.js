@@ -1,8 +1,8 @@
-const CACHE = 'jangbion-driver-v18';
+const CACHE = 'jangbion-driver-v19';
 const PRECACHE = [
   '/',
   '/index.html',
-  '/app.js?v=3.2.2',
+  '/app.js?v=3.3.0',
   '/manifest.json',
   '/static/icon.svg',
   '/static/icons/icon-192.png',
@@ -18,7 +18,10 @@ self.addEventListener('install', e => {
       }));
     })
   );
-  self.skipWaiting();
+});
+
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {
@@ -33,14 +36,16 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
 
-  // HTML 문서는 네트워크 우선: 온라인이면 항상 최신 버전을 받아오고,
-  // 오프라인일 때만 마지막으로 받아둔 캐시를 사용한다.
-  if (req.mode === 'navigate' || req.destination === 'document') {
+  // HTML, JavaScript, CSS는 네트워크 우선: 온라인이면 최신 파일을 받고,
+  // 오프라인일 때만 마지막 캐시를 사용한다.
+  if (req.mode === 'navigate' || ['document', 'script', 'style'].includes(req.destination)) {
     e.respondWith(
       fetch(req)
         .then(res => {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(req, clone));
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(req, clone));
+          }
           return res;
         })
         .catch(() => caches.match(req).then(cached => cached || caches.match('/')))
