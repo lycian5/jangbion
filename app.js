@@ -3,11 +3,18 @@
 
   const STORAGE_KEY = 'forklift_log_data';
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
-  const DB_VERSION = 6;
-  const APP_VERSION = '3.3.0';
+  const FONT_SIZE_KEY = 'jangbion_font_size_v1';
+  const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
+  const APP_VERSION = '3.4.0';
+  const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
+  const DB_VERSION = 7;
   const MAX_WORK_PHOTOS = 4;
-  const APPROX_STORAGE_LIMIT = 5 * 1024 * 1024;
-  const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000;
+  const APPROX_STORAGE_LIMIT = 50 * 1024 * 1024;
+  const IDB_NAME = 'jangbion_db';
+  const IDB_VERSION = 1;
+  const PHOTO_RETENTION_KEY = 'jangbion_photo_retention_days';
+  const BACKUP_REMINDER_KEY = 'jangbion_last_backup_at';
+  const DEFAULT_PHOTO_RETENTION_DAYS = 90;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
   const $ = id => document.getElementById(id);
@@ -15,6 +22,374 @@
   const uid = prefix => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const numberOr = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const isDateString = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+
+  let idb = null;
+  let persistQueue = Promise.resolve();
+  let lastPersistError = null;
+  const objectUrlByPhotoId = new Map();
+
+  function openIdb() {
+    if (idb) return Promise.resolve(idb);
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) {
+        reject(new Error('IndexedDB를 지원하지 않습니다.'));
+        return;
+      }
+      const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+      request.onerror = () => reject(request.error || new Error('IndexedDB 열기 실패'));
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        if (!db.objectStoreNames.contains('collections')) db.createObjectStore('collections');
+        if (!db.objectStoreNames.contains('photos')) {
+          const photos = db.createObjectStore('photos', { keyPath: 'id' });
+          photos.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+      };
+      request.onsuccess = () => {
+        idb = request.result;
+        resolve(idb);
+      };
+    });
+  }
+
+  function idbReq(request) {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    if (!dataUrl || typeof dataUrl !== 'string') return null;
+    if (dataUrl.startsWith('blob:')) return null;
+    if (!dataUrl.startsWith('data:')) return null;
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) return null;
+    const header = parts[0];
+    const data = parts.slice(1).join(',');
+    const mimeMatch = header.match(/data:([^;]+)/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    try {
+      const binary = atob(data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    } catch (error) {
+      console.warn(error);
+      return null;
+    }
+  }
+
+  async function blobFromDisplayValue(value) {
+    if (!value) return null;
+    if (typeof value !== 'string') return null;
+    if (value.startsWith('data:')) return dataUrlToBlob(value);
+    if (value.startsWith('blob:')) {
+      try {
+        const response = await fetch(value);
+        return await response.blob();
+      } catch (error) {
+        console.warn(error);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function revokePhotoUrls() {
+    objectUrlByPhotoId.forEach(url => {
+      try { URL.revokeObjectURL(url); } catch (error) { /* ignore */ }
+    });
+    objectUrlByPhotoId.clear();
+  }
+
+  async function materializePhotoRef(photoId, blob) {
+    if (!photoId || !blob) return '';
+    if (objectUrlByPhotoId.has(photoId)) return objectUrlByPhotoId.get(photoId);
+    const url = URL.createObjectURL(blob);
+    objectUrlByPhotoId.set(photoId, url);
+    return url;
+  }
+
+  function collectionKeys() {
+    return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports'];
+  }
+
+  function walkPhotoFields(db, visitor) {
+    (db.dailyLogs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+    (db.workLogs || []).forEach(item => {
+      const list = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
+      const nextList = list.map((photo, index) => {
+        let replaced = photo;
+        visitor(item, `photos.${index}`, photo, (next) => { replaced = next; });
+        return replaced;
+      });
+      item.photos = nextList;
+      if ('photo' in item) item.photo = nextList[0] || '';
+    });
+    (db.fuelLogs || []).forEach(item => visitor(item, 'receipt', item.receipt, (next) => { item.receipt = next; }));
+    (db.maintLogs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+    (db.inspections || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+    (db.faultReports || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+  }
+
+  function isPhotoRef(value) {
+    return typeof value === 'string' && value.startsWith('photo:');
+  }
+
+  function photoIdFromRef(value) {
+    return isPhotoRef(value) ? value.slice(6) : '';
+  }
+
+  async function extractPhotosForPersist(db) {
+    const photoPuts = [];
+    const usedIds = new Set();
+    const tasks = [];
+    walkPhotoFields(db, (owner, field, value, setValue) => {
+      if (!value) return;
+      if (isPhotoRef(value)) {
+        usedIds.add(photoIdFromRef(value));
+        return;
+      }
+      tasks.push((async () => {
+        const blob = await blobFromDisplayValue(value);
+        if (!blob) return;
+        const id = uid('photo');
+        usedIds.add(id);
+        photoPuts.push({
+          id,
+          blob,
+          mime: blob.type || 'image/jpeg',
+          createdAt: owner.createdAt || owner.updatedAt || owner.completedAt || owner.occurredAt || new Date().toISOString(),
+          ownerType: field,
+          ownerId: owner.id || ''
+        });
+        setValue(`photo:${id}`);
+      })());
+    });
+    await Promise.all(tasks);
+    return { photoPuts, usedIds };
+  }
+
+  async function hydratePhotosInDb(db) {
+    const database = await openIdb();
+    const refs = [];
+    walkPhotoFields(db, (owner, field, value) => {
+      if (isPhotoRef(value)) refs.push(photoIdFromRef(value));
+    });
+    const unique = [...new Set(refs.filter(Boolean))];
+    const blobs = new Map();
+    await Promise.all(unique.map(async id => {
+      const row = await idbReq(database.transaction('photos', 'readonly').objectStore('photos').get(id));
+      if (row?.blob) blobs.set(id, row.blob);
+    }));
+    const hydrateTasks = [];
+    walkPhotoFields(db, (owner, field, value, setValue) => {
+      if (!isPhotoRef(value)) return;
+      const id = photoIdFromRef(value);
+      const blob = blobs.get(id);
+      if (!blob) {
+        setValue('');
+        return;
+      }
+      hydrateTasks.push(materializePhotoRef(id, blob).then(url => setValue(url)));
+    });
+    await Promise.all(hydrateTasks);
+    return db;
+  }
+
+  async function persistDatabase(db, options = {}) {
+    const database = await openIdb();
+    const working = clone(db);
+    const { photoPuts, usedIds } = await extractPhotosForPersist(working);
+    const tx = database.transaction(['meta', 'collections', 'photos'], 'readwrite');
+    const metaStore = tx.objectStore('meta');
+    const colStore = tx.objectStore('collections');
+    const photoStore = tx.objectStore('photos');
+    metaStore.put({
+      version: working.version || DB_VERSION,
+      currentEquipmentId: working.currentEquipmentId,
+      updatedAt: new Date().toISOString()
+    }, 'app');
+    collectionKeys().forEach(key => {
+      colStore.put(working[key] || [], key);
+    });
+    for (const row of photoPuts) {
+      photoStore.put(row);
+    }
+    if (options.pruneOrphans) {
+      const allKeys = await idbReq(photoStore.getAllKeys());
+      for (const key of allKeys) {
+        if (!usedIds.has(key)) photoStore.delete(key);
+      }
+    }
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('persist aborted'));
+    });
+    try { localStorage.removeItem(STORAGE_KEY); } catch (error) { /* ignore */ }
+    lastPersistError = null;
+  }
+
+  function queuePersist(db, options) {
+    persistQueue = persistQueue.then(() => persistDatabase(db, options)).catch(error => {
+      console.error(error);
+      lastPersistError = error;
+      const quota = error && (error.name === 'QuotaExceededError' || /quota/i.test(String(error.message || '')));
+      showToast(quota
+        ? '저장 공간이 부족합니다. 오래된 사진을 정리하거나 백업 후 용량을 확보해주세요.'
+        : '저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    });
+    return persistQueue;
+  }
+
+  async function loadFromIdb() {
+    const database = await openIdb();
+    const meta = await idbReq(database.transaction('meta', 'readonly').objectStore('meta').get('app'));
+    if (!meta) return null;
+    const raw = { version: meta.version, currentEquipmentId: meta.currentEquipmentId };
+    for (const key of collectionKeys()) {
+      raw[key] = await idbReq(database.transaction('collections', 'readonly').objectStore('collections').get(key)) || [];
+    }
+    const migrated = migrateDatabase(raw);
+    await hydratePhotosInDb(migrated);
+    return migrated;
+  }
+
+  async function migrateLocalStorageToIdb() {
+    let stored = null;
+    try {
+      stored = localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+      stored = null;
+    }
+    if (!stored) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(stored);
+    } catch (error) {
+      return null;
+    }
+    const migrated = migrateDatabase(parsed);
+    await persistDatabase(migrated, { pruneOrphans: true });
+    await hydratePhotosInDb(migrated);
+    return migrated;
+  }
+
+  async function loadDatabaseAsync() {
+    try {
+      const fromIdb = await loadFromIdb();
+      if (fromIdb) return fromIdb;
+    } catch (error) {
+      console.warn('IndexedDB 로드 실패', error);
+    }
+    try {
+      const migrated = await migrateLocalStorageToIdb();
+      if (migrated) {
+        showToast('저장 방식을 업그레이드했습니다. 기존 기록을 옮겼습니다.');
+        return migrated;
+      }
+    } catch (error) {
+      console.warn('localStorage 이관 실패', error);
+      showToast('데이터 이동 중 문제가 있었습니다. 백업 후 다시 시도해주세요.');
+    }
+    return migrateDatabase({});
+  }
+
+  function getPhotoRetentionDays() {
+    const raw = Number(localStorage.getItem(PHOTO_RETENTION_KEY));
+    if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+    return DEFAULT_PHOTO_RETENTION_DAYS;
+  }
+
+  function setPhotoRetentionDays(days) {
+    const value = Math.max(0, Math.floor(Number(days) || DEFAULT_PHOTO_RETENTION_DAYS));
+    try { localStorage.setItem(PHOTO_RETENTION_KEY, String(value)); } catch (error) { console.warn(error); }
+    return value;
+  }
+
+  function daysAgoIso(days) {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - days);
+    return date.toISOString();
+  }
+
+  function stripPhotoRefsFromDb(db, removeIds) {
+    const remove = new Set(removeIds);
+    walkPhotoFields(db, (owner, field, value, setValue) => {
+      if (isPhotoRef(value) && remove.has(photoIdFromRef(value))) setValue('');
+      if (typeof value === 'string' && (value.startsWith('data:') || value.startsWith('blob:')) && remove.size) {
+        // display values cleared only when matching refs already handled
+      }
+    });
+  }
+
+  async function purgePhotosOlderThan(days) {
+    const database = await openIdb();
+    const cutoff = daysAgoIso(days);
+    const rows = await idbReq(database.transaction('photos', 'readonly').objectStore('photos').getAll());
+    const stale = (rows || []).filter(row => String(row.createdAt || '') < cutoff);
+    if (!stale.length) {
+      showToast(`${days}일 이전 사진이 없습니다.`);
+      return 0;
+    }
+    if (!confirm(`${days}일 이전 사진 ${stale.length}장을 삭제합니다. 텍스트 기록은 유지됩니다. 계속할까요?`)) return 0;
+    const ids = stale.map(row => row.id);
+    const next = clone(DB);
+    stripPhotoRefsFromDb(next, ids);
+    // also clear in-memory display strings that came from those photos by re-hydrate empty refs
+    walkPhotoFields(next, (owner, field, value, setValue) => {
+      if (typeof value === 'string' && value.startsWith('blob:')) {
+        // leave; persist will not re-extract without data url — force empty if object url mapped
+        for (const [id, url] of objectUrlByPhotoId.entries()) {
+          if (url === value && ids.includes(id)) setValue('');
+        }
+      }
+    });
+    const tx = database.transaction('photos', 'readwrite');
+    ids.forEach(id => tx.objectStore('photos').delete(id));
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    ids.forEach(id => {
+      const url = objectUrlByPhotoId.get(id);
+      if (url) {
+        try { URL.revokeObjectURL(url); } catch (error) { /* ignore */ }
+        objectUrlByPhotoId.delete(id);
+      }
+    });
+    DB = next;
+    await queuePersist(DB, { pruneOrphans: true });
+    updateStorageMeter();
+    showToast(`오래된 사진 ${ids.length}장을 정리했습니다.`);
+    return ids.length;
+  }
+
+  async function estimateStorageBytes() {
+    let total = 0;
+    try {
+      const database = await openIdb();
+      const photos = await idbReq(database.transaction('photos', 'readonly').objectStore('photos').getAll());
+      (photos || []).forEach(row => { total += row.blob ? row.blob.size : 0; });
+      const text = clone(DB);
+      walkPhotoFields(text, (owner, field, value, setValue) => setValue(isPhotoRef(value) ? value : ''));
+      total += new Blob([JSON.stringify(text)]).size;
+    } catch (error) {
+      total = new Blob([JSON.stringify(DB)]).size;
+    }
+    if (navigator.storage?.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (estimate?.usage) return { bytes: total, usage: estimate.usage, quota: estimate.quota || APPROX_STORAGE_LIMIT };
+      } catch (error) { /* ignore */ }
+    }
+    return { bytes: total, usage: total, quota: APPROX_STORAGE_LIMIT };
+  }
+
 
   function localDateString(date = new Date()) {
     const y = date.getFullYear();
@@ -163,13 +538,8 @@
   }
 
   function loadDatabase() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return migrateDatabase(stored ? JSON.parse(stored) : {});
-    } catch (error) {
-      console.warn('저장 데이터를 읽지 못했습니다.', error);
-      return migrateDatabase({});
-    }
+    // 동기 초기값. 실제 데이터는 boot()에서 IndexedDB/이관으로 채웁니다.
+    return migrateDatabase({});
   }
 
   let DB = loadDatabase();
@@ -188,19 +558,17 @@
   let freePlanGuideSource = 'details';
   let deferredInstallPrompt = null;
   let installCompleted = false;
-  let serviceWorkerRegistration = null;
-  let applyingAppUpdate = false;
   const INSTALL_HANDOFF_PARAM = 'install';
   const INSTALL_HANDOFF_SOURCE_PARAM = 'from';
   const KAKAO_HANDOFF_GUARD = 'jangbion:kakao-chrome-handoff';
 
-  function commit(mutator, failureMessage = '저장 공간이 부족합니다. 사진을 줄이거나 백업 후 오래된 기록을 정리해주세요.') {
+  function commit(mutator, failureMessage = '저장 공간이 부족합니다. 오래된 사진을 정리하거나 백업 후 다시 시도해주세요.') {
     const next = clone(DB);
     try {
       mutator(next);
       next.version = DB_VERSION;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       DB = next;
+      queuePersist(DB).then(() => updateStorageMeter());
       updateStorageMeter();
       return true;
     } catch (error) {
@@ -1011,7 +1379,7 @@
     preview.style.display = 'block';
   }
 
-  function compressImage(file, maxDimension = 1024, quality = 0.62) {
+  function compressImage(file, maxDimension = 800, quality = 0.5) {
     return new Promise((resolve, reject) => {
       if (!file.type.startsWith('image/')) return reject(new Error('이미지 파일이 아닙니다.'));
       const reader = new FileReader();
@@ -1031,7 +1399,14 @@
           context.fillStyle = '#fff';
           context.fillRect(0, 0, width, height);
           context.drawImage(image, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', quality));
+          let output = '';
+          try {
+            output = canvas.toDataURL('image/webp', quality);
+            if (!output.startsWith('data:image/webp')) output = canvas.toDataURL('image/jpeg', quality);
+          } catch (error) {
+            output = canvas.toDataURL('image/jpeg', quality);
+          }
+          resolve(output);
         };
         image.src = String(reader.result);
       };
@@ -1753,11 +2128,38 @@
     openSettings();
   }
 
+  function getFontSize() {
+    const value = localStorage.getItem(FONT_SIZE_KEY) || 'normal';
+    return FONT_SIZE_OPTIONS.includes(value) ? value : 'normal';
+  }
+
+  function applyFontSize(size) {
+    const next = FONT_SIZE_OPTIONS.includes(size) ? size : 'normal';
+    document.documentElement.setAttribute('data-font-size', next);
+    try { localStorage.setItem(FONT_SIZE_KEY, next); } catch (error) { console.warn(error); }
+    document.querySelectorAll('input[name="font-size"]').forEach(input => {
+      input.checked = input.value === next;
+    });
+  }
+
+  function bindFontSizeControls() {
+    document.querySelectorAll('input[name="font-size"]').forEach(input => {
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          applyFontSize(input.value);
+          showToast('글자 크기를 적용했습니다.');
+        }
+      });
+    });
+  }
+
   function openSettings() {
     hideEquipmentForm();
     renderEquipmentList();
     updatePlanSummary();
     updateStorageMeter();
+    applyFontSize(getFontSize());
+    updateAppVersionLabel();
     $('settings-modal').classList.remove('hidden');
   }
 
@@ -1864,15 +2266,29 @@
   }
 
   function updateStorageMeter() {
-    const text = $('storage-text');
+    const textEl = $('storage-text');
     const bar = $('storage-bar');
-    if (!text || !bar) return;
-    const bytes = new Blob([JSON.stringify(DB)]).size;
-    const percent = Math.min(100, bytes / APPROX_STORAGE_LIMIT * 100);
-    text.textContent = `예상 저장공간 ${formatNumber(bytes / 1024, 0)}KB · 약 ${percent.toFixed(1)}% 사용`;
-    bar.style.width = `${percent}%`;
-    bar.style.background = percent > 80 ? 'var(--danger)' : percent > 60 ? 'var(--warning)' : 'var(--primary)';
+    if (!textEl || !bar) return;
+    estimateStorageBytes().then(({ bytes, usage, quota }) => {
+      const limit = quota || APPROX_STORAGE_LIMIT;
+      const percent = Math.min(100, (usage || bytes) / limit * 100);
+      const photoHint = percent > 70 ? ' · 사진 정리를 권장합니다' : '';
+      textEl.textContent = `예상 저장 ${formatNumber(bytes / 1024, 0)}KB · 약 ${percent.toFixed(1)}%${photoHint}`;
+      bar.style.width = `${percent}%`;
+      bar.style.background = percent > 80 ? 'var(--danger)' : percent > 60 ? 'var(--warning)' : 'var(--primary)';
+      if (percent > 85) {
+        const note = $('storage-action-hint');
+        if (note) note.textContent = '저장 공간이 부족해질 수 있습니다. 아래 사진 정리를 사용하세요.';
+      }
+    }).catch(() => {
+      const bytes = new Blob([JSON.stringify(DB)]).size;
+      textEl.textContent = `예상 저장공간 ${formatNumber(bytes / 1024, 0)}KB`;
+      bar.style.width = '0%';
+    });
   }
+
+  function purgePhotos30() { return purgePhotosOlderThan(30); }
+  function purgePhotos90() { return purgePhotosOlderThan(getPhotoRetentionDays() || 90); }
 
   function updatePlanSummary() {
     const count = $('plan-equipment-count');
@@ -1912,37 +2328,75 @@
     showEquipmentForm(null, true);
   }
 
-  function exportBackup() {
-    const payload = { ...DB, exportedAt: new Date().toISOString(), app: '장비온' };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `장비온_backup_${localDateString()}.json`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    showToast('⬇ 백업 파일을 저장했습니다.');
+  async function exportBackup() {
+    try {
+      await queuePersist(DB, { pruneOrphans: true });
+      const payload = clone(DB);
+      // 화면에 쓰인 blob/object URL을 dataURL로 바꿔 호환 백업 생성
+      const tasks = [];
+      walkPhotoFields(payload, (owner, field, value, setValue) => {
+        if (!value || typeof value !== 'string') return;
+        if (value.startsWith('data:')) return;
+        if (value.startsWith('blob:') || isPhotoRef(value)) {
+          tasks.push((async () => {
+            let blob = null;
+            if (isPhotoRef(value)) {
+              const row = await idbReq((await openIdb()).transaction('photos', 'readonly').objectStore('photos').get(photoIdFromRef(value)));
+              blob = row?.blob || null;
+            } else {
+              blob = await blobFromDisplayValue(value);
+            }
+            if (!blob) { setValue(''); return; }
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ''));
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(blob);
+            });
+            setValue(dataUrl);
+          })());
+        }
+      });
+      await Promise.all(tasks);
+      payload.exportedAt = new Date().toISOString();
+      payload.app = '장비온';
+      payload.version = DB_VERSION;
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `장비온_backup_${localDateString()}.json`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      try { localStorage.setItem(BACKUP_REMINDER_KEY, new Date().toISOString()); } catch (error) { /* ignore */ }
+      showToast('⬇ 백업 파일을 저장했습니다.');
+    } catch (error) {
+      console.error(error);
+      showToast('백업 파일을 만들지 못했습니다.');
+    }
   }
 
   function importBackup(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > 40 * 1024 * 1024) {
       showToast('백업 파일이 너무 큽니다.');
       return;
     }
     const reader = new FileReader();
     reader.onerror = () => showToast('백업 파일을 읽지 못했습니다.');
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(String(reader.result));
         if (!Array.isArray(parsed.dailyLogs) && !Array.isArray(parsed.equipments)) throw new Error('invalid');
         if (!confirm('현재 데이터를 백업 파일로 교체할까요? 기존 데이터는 덮어씁니다.')) return;
         const migrated = migrateDatabase(parsed);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        revokePhotoUrls();
+        await persistDatabase(migrated, { pruneOrphans: true });
+        await hydratePhotosInDb(migrated);
         DB = migrated;
         currentUsagePhoto = null;
         currentWorkPhotos = [];
@@ -1950,8 +2404,10 @@
         updatePlanSummary();
         closeSettings();
         refreshActiveTab();
+        updateStorageMeter();
         showToast('⬆ 백업 데이터를 복원했습니다.');
       } catch (error) {
+        console.error(error);
         showToast('올바른 장비온 백업 파일이 아닙니다.');
       }
     };
@@ -2155,60 +2611,124 @@
     navigator.clipboard.writeText(url).then(() => showToast('주소를 복사했습니다.')).catch(() => showToast(`주소: ${url}`));
   }
 
+  let swRegistration = null;
+  let swUpdateIntervalId = null;
+  let applyingAppUpdate = false;
+
+  function updateAppVersionLabel(extra = '') {
+    const el = $('app-version-text');
+    if (!el) return;
+    el.textContent = extra ? `v${APP_VERSION} · ${extra}` : `v${APP_VERSION}`;
+  }
+
   function showAppUpdateNotice() {
     $('app-update-banner')?.classList.add('show');
-    $('update-check-status').textContent = '새 버전이 준비되었습니다. 저장 후 “새 버전 적용”을 눌러주세요.';
+    updateAppVersionLabel('새 버전 준비됨');
   }
 
-  function setUpdateCheckStatus(message) {
-    $('update-check-status').textContent = message;
+  function hideAppUpdateNotice() {
+    $('app-update-banner')?.classList.remove('show');
   }
 
-  async function checkForAppUpdate(manual = false) {
-    if (!serviceWorkerRegistration) return;
-    if (manual) setUpdateCheckStatus('최신 버전을 확인하고 있습니다.');
-    try {
-      await serviceWorkerRegistration.update();
-      if (serviceWorkerRegistration.waiting) {
-        showAppUpdateNotice();
-      } else if (manual) {
-        setUpdateCheckStatus(`현재 v${APP_VERSION}이 최신 버전입니다.`);
-      }
-    } catch (error) {
-      if (manual) setUpdateCheckStatus('업데이트를 확인하지 못했습니다. 인터넷 연결을 확인해주세요.');
-      console.warn('업데이트 확인 실패', error);
+  function trackSwRegistration(registration) {
+    swRegistration = registration;
+    if (registration.waiting) showAppUpdateNotice();
+    registration.addEventListener('updatefound', () => {
+      const installing = registration.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+          showAppUpdateNotice();
+        }
+      });
+    });
+  }
+
+  function checkForAppUpdate(options = {}) {
+    const { silent = true } = options;
+    if (!('serviceWorker' in navigator)) {
+      if (!silent) showToast('이 브라우저는 앱 업데이트를 지원하지 않습니다.');
+      return Promise.resolve();
     }
+    const run = registration => {
+      if (!registration) {
+        if (!silent) showToast('업데이트 정보를 확인할 수 없습니다.');
+        return Promise.resolve();
+      }
+      return registration.update()
+        .then(() => {
+          if (registration.waiting) {
+            showAppUpdateNotice();
+            if (!silent) showToast('새 버전이 준비되었습니다. 적용을 눌러주세요.');
+            return;
+          }
+          if (!silent) showToast('최신 버전입니다.');
+          updateAppVersionLabel('최신');
+        })
+        .catch(() => {
+          if (!silent) showToast('업데이트 확인에 실패했습니다. 네트워크를 확인해주세요.');
+        });
+    };
+    if (swRegistration) return run(swRegistration);
+    return navigator.serviceWorker.getRegistration().then(reg => {
+      if (reg) trackSwRegistration(reg);
+      return run(reg);
+    }).catch(() => {
+      if (!silent) showToast('업데이트 확인에 실패했습니다.');
+    });
   }
 
   function applyAppUpdate() {
-    const waitingWorker = serviceWorkerRegistration?.waiting;
-    if (!waitingWorker) return window.location.reload();
+    if (applyingAppUpdate) return;
     applyingAppUpdate = true;
-    setUpdateCheckStatus('새 버전을 적용하고 있습니다.');
-    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    const reloadNow = () => {
+      hideAppUpdateNotice();
+      window.location.reload();
+    };
+    const waiting = swRegistration?.waiting;
+    if (waiting) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => reloadNow(), { once: true });
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+      setTimeout(reloadNow, 1200);
+      return;
+    }
+    checkForAppUpdate({ silent: true }).finally(() => {
+      if (swRegistration?.waiting) {
+        swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        setTimeout(reloadNow, 800);
+      } else {
+        reloadNow();
+      }
+    });
   }
 
   function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
+    if (!('serviceWorker' in navigator)) {
+      updateAppVersionLabel();
+      return;
+    }
     const hadController = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (applyingAppUpdate) return window.location.reload();
+      if (applyingAppUpdate) {
+        window.location.reload();
+        return;
+      }
       if (hadController) showAppUpdateNotice();
     });
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
-        serviceWorkerRegistration = registration;
-        if (registration.waiting) showAppUpdateNotice();
-        registration.addEventListener('updatefound', () => {
-          const worker = registration.installing;
-          worker?.addEventListener('statechange', () => {
-            if (worker.state === 'installed' && navigator.serviceWorker.controller) showAppUpdateNotice();
-          });
-        });
-        checkForAppUpdate();
-        window.setInterval(checkForAppUpdate, UPDATE_CHECK_INTERVAL);
+        trackSwRegistration(registration);
+        registration.update().catch(() => {});
+        if (swUpdateIntervalId) clearInterval(swUpdateIntervalId);
+        swUpdateIntervalId = setInterval(() => checkForAppUpdate({ silent: true }), SW_UPDATE_INTERVAL_MS);
       })
       .catch(error => console.warn('서비스워커 등록 실패', error));
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkForAppUpdate({ silent: true });
+    });
+    window.addEventListener('online', () => checkForAppUpdate({ silent: true }));
+    updateAppVersionLabel();
   }
 
   function bindEvents() {
@@ -2283,23 +2803,23 @@
     $('trend-range-week').addEventListener('click', () => { usageTrendRange = 'week'; renderUsageTrend(); });
     $('trend-range-month').addEventListener('click', () => { usageTrendRange = 'month'; renderUsageTrend(); });
     $('trend-type').addEventListener('change', event => { usageTrendType = event.target.value; renderUsageTrend(); });
-    $('btn-apply-update').addEventListener('click', applyAppUpdate);
-    $('btn-check-update').addEventListener('click', () => checkForAppUpdate(true));
+    $('btn-apply-update')?.addEventListener('click', applyAppUpdate);
+    $('btn-check-update')?.addEventListener('click', () => checkForAppUpdate({ silent: false }));
     $('history-type').addEventListener('change', loadHistoryTab);
     $('history-month').addEventListener('change', loadHistoryTab);
     $('admin-history-equipment').addEventListener('change', renderAdminHistory);
     $('admin-history-type').addEventListener('change', renderAdminHistory);
     $('admin-history-month').addEventListener('change', renderAdminHistory);
-    window.addEventListener('online', () => { updateOnlineStatus(); checkForAppUpdate(); if (currentMode === 'record') loadSummary(); });
+    window.addEventListener('online', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
     window.addEventListener('offline', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForAppUpdate(); });
     document.querySelectorAll('.modal-overlay').forEach(modal => modal.addEventListener('click', event => {
       if (event.target === modal) modal.classList.add('hidden');
     }));
   }
 
   function initialize() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (error) { console.warn(error); }
+    applyFontSize(getFontSize());
+    bindFontSizeControls();
     $('dateSelect').value = localDateString();
     $('history-month').value = localDateString().slice(0, 7);
     $('admin-history-month').value = localDateString().slice(0, 7);
@@ -2312,18 +2832,35 @@
     loadSummary();
     updatePlanSummary();
     updateStorageMeter();
-    $('app-version').textContent = `v${APP_VERSION}`;
     handleInstallHandoff();
     if (!localStorage.getItem(PLAN_NOTICE_KEY) && !isInstallHandoffEntry() && !isAndroidKakaoBrowser()) {
       setTimeout(() => openFreePlanGuide('welcome'), 350);
     }
     registerServiceWorker();
+    const lastBackup = localStorage.getItem(BACKUP_REMINDER_KEY);
+    if (lastBackup) {
+      const elapsed = Date.now() - Date.parse(lastBackup);
+      if (Number.isFinite(elapsed) && elapsed > 7 * 24 * 60 * 60 * 1000) {
+        setTimeout(() => showToast('백업한 지 7일이 지났습니다. 설정에서 백업을 권장합니다.'), 1200);
+      }
+    }
+  }
+
+  async function boot() {
+    try {
+      DB = await loadDatabaseAsync();
+    } catch (error) {
+      console.error(error);
+      DB = migrateDatabase({});
+      showToast('저장소를 초기화했습니다.');
+    }
+    initialize();
   }
 
   Object.assign(window, {
     switchTab, switchMode, openEquipmentManager, openSettings, closeSettings, showEquipmentForm, hideEquipmentForm,
     saveEquipment, editEquipment, selectEquipment, deleteEquipment, removeWorkPhoto, deleteHistoryRecord, startNewWorkRecord, editWorkRecord,
-    exportBackup, importBackup, openInstallGuide, closeInstallGuide, installAppShortcut, copySiteUrl,
+    exportBackup, importBackup, purgePhotos30, purgePhotos90, openInstallGuide, closeInstallGuide, installAppShortcut, copySiteUrl,
     openFreePlanGuide, closeFreePlanGuide, continueEquipmentRegistration,
     openEquipmentFromAdmin, exportAdminCsv,
     openSubmissionModal, closeSubmissionModal, copyDailySubmission, shareDailySubmission
@@ -2332,5 +2869,5 @@
     , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
   });
 
-  initialize();
+  boot();
 })();
