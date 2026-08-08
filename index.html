@@ -374,20 +374,42 @@
     .home-summary-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .record-metrics-card { margin-bottom:12px; }
     .home-metric-card { cursor:default; }
-    .service-interval-alerts { display:flex; flex-direction:column; gap:8px; margin:12px 0 4px; }
-    .service-interval-alerts:empty { display:none; }
-    .service-alert {
-      border:1px solid #fed7aa; background:linear-gradient(145deg,#fffbeb,#fff7ed);
-      border-radius:14px; padding:12px 14px; text-align:left; cursor:pointer; font:inherit; color:var(--text);
+    .service-interval-card { border:1px solid #e2e8f0; background:linear-gradient(145deg,#fff,#f8fafc); }
+    .service-interval-alerts {
+      display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;
     }
-    .service-alert.ok { border-color:#a7f3d0; background:linear-gradient(145deg,#f0fdf4,#ecfdf5); }
-    .service-alert.warn { border-color:#fdba74; background:linear-gradient(145deg,#fff7ed,#ffedd5); }
-    .service-alert-title { font-size:.82rem; font-weight:900; color:var(--brand-navy); }
-    .service-alert-meta { margin-top:4px; font-size:.78rem; font-weight:800; color:#c2410c; }
+    .service-interval-alerts:empty { display:none; }
+    .service-interval-alerts-record {
+      display:flex; flex-direction:column; gap:8px; margin-top:8px;
+    }
+    .service-alert {
+      display:block; width:100%; margin:0;
+      border:1px solid var(--border); background:#fff;
+      border-radius:11px; padding:10px 12px; text-align:left;
+      cursor:pointer; font:inherit; color:var(--text);
+      box-shadow:none;
+    }
+    .service-alert.warn { border-color:#fdba74; background:#fff7ed; }
+    .service-alert.ok { border-color:#e2e8f0; background:#fff; }
+    .service-alert.none { border-color:var(--border); background:#f8fafc; }
+    .service-alert-title {
+      color:var(--sub); font-size:.7rem; font-weight:700;
+    }
+    .service-alert-meta {
+      margin-top:4px; font-size:.82rem; font-weight:900; color:var(--text);
+    }
+    .service-alert.warn .service-alert-meta { color:#c2410c; }
     .service-alert.ok .service-alert-meta { color:#047857; }
-    .service-alert-detail { margin-top:4px; font-size:.72rem; color:var(--sub); line-height:1.45; }
+    .service-alert.none .service-alert-meta { color:var(--sub); font-weight:800; }
+    .service-alert-detail {
+      margin-top:4px; font-size:.7rem; color:var(--sub); line-height:1.45;
+    }
 
     .record-service-card { margin-bottom:12px; }
+    .more-menu-group .btn { margin-top:8px; }
+    .data-settings-panel { margin-top:8px; }
+    .data-settings-panel.is-hidden { display:none !important; }
+
     .service-interval-alerts-record { margin-top:8px; }
 
 
@@ -415,6 +437,17 @@
     .work-record-edit { min-height:36px; padding:0 10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:var(--brand-navy); font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
     .driver-empty { text-align:center; color:var(--sub); padding:22px 10px; font-size:.8rem; }
     .secondary-card { box-shadow:none; }
+    .bottom-nav-icon-wrap { position:relative; display:inline-grid; place-items:center; }
+    .nav-badge {
+      position:absolute; top:-4px; right:-10px;
+      min-width:18px; height:18px; padding:0 5px; border-radius:999px;
+      background:#ef4444; color:#fff; font-size:11px; font-weight:800;
+      line-height:18px; text-align:center; box-sizing:border-box;
+    }
+    .nav-badge.hidden { display:none !important; }
+    .header-action-button .nav-badge { top:2px; right:2px; min-width:16px; height:16px; line-height:16px; font-size:10px; }
+    .alerts-hub-list { display:flex; flex-direction:column; gap:8px; margin:12px 0; }
+    .alerts-hub-empty { padding:16px; text-align:center; color:var(--sub); font-size:.82rem; line-height:1.5; }
     .mobile-bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:150; display:grid; grid-template-columns:repeat(5,1fr); min-height:72px; padding:5px max(8px,env(safe-area-inset-left)) max(5px,env(safe-area-inset-bottom)); background:rgba(255,255,255,.98); border-top:1px solid var(--border); box-shadow:0 -4px 18px rgba(15,23,42,.08); }
     .bottom-nav-button { min-width:0; min-height:58px; border:0; background:transparent; color:#64748b; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-size:.67rem; font-weight:800; cursor:pointer; }
     .bottom-nav-button.active { color:var(--brand-orange); }
@@ -492,8 +525,9 @@
     <div class="header-actions">
       <button class="header-action-button" type="button" onclick="navigateBottom('alerts')" aria-label="알림 보기">
         <svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg>
+        <span id="alerts-badge-header" class="nav-badge hidden" aria-hidden="true">0</span>
       </button>
-      <button class="header-action-button" type="button" onclick="openSettings()" aria-label="사용자 및 설정">
+      <button class="header-action-button" type="button" onclick="openMoreMenu()" aria-label="더보기 및 설정">
         <svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg>
       </button>
     </div>
@@ -542,30 +576,6 @@
           <span class="health-badge health-inspection" id="driver-health-badge">상태 확인 중</span>
         </div>
 
-        <!-- 홈: 상태 + 빠른 실행 중심 (오늘 실적 수치는 사용 탭) -->
-        <div class="home-status-block">
-          <div id="service-interval-alerts" class="service-interval-alerts" aria-live="polite"></div>
-          <div class="driver-section-title"><h2>오늘 상태</h2><span class="hint" id="home-status-date">오늘 기준</span></div>
-          <div class="home-status-pills" id="home-status-pills">
-            <button type="button" class="home-status-pill" id="home-status-usage" onclick="switchTab('usage')">사용 · 확인 중</button>
-            <button type="button" class="home-status-pill" id="home-status-work" onclick="switchTab('work')">작업 · 확인 중</button>
-            <button type="button" class="home-status-pill" id="home-status-fuel" onclick="switchTab('fuel')">주유 · 확인 중</button>
-            <button type="button" class="home-status-pill" id="home-status-maint" onclick="switchTab('maint')">정비 · 확인 중</button>
-          </div>
-          <div class="home-status-grid home-status-grid-compact" id="home-status-overview">
-            <button class="home-status-card" type="button" onclick="switchTab('fuel')">
-              <span class="home-status-head"><span>주유 현황</span><svg class="ui-icon small" aria-hidden="true"><use href="#icon-fuel"></use></svg></span>
-              <strong class="home-status-value" id="driver-fuel-status-value">기록 없음</strong>
-              <span class="home-status-detail" id="driver-fuel-status-detail">주유 기록을 추가할 수 있습니다.</span>
-            </button>
-            <button class="home-status-card" type="button" onclick="switchTab('maint')">
-              <span class="home-status-head"><span>정비 현황</span><svg class="ui-icon small" aria-hidden="true"><use href="#icon-wrench"></use></svg></span>
-              <strong class="home-status-value" id="driver-maint-status-value">기록 없음</strong>
-              <span class="home-status-detail" id="driver-maint-status-detail">등록된 다음 점검 일정이 없습니다.</span>
-            </button>
-          </div>
-        </div>
-
         <div class="driver-section-title" style="margin-top:4px"><h2>빠른 실행</h2></div>
         <div class="operation-button-stack home-quick-actions">
           <button class="btn operation-primary" id="driver-operation-button" type="button" onclick="handleOperationPrimaryAction()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>오늘 운행 기록 입력</span></button>
@@ -593,23 +603,32 @@
         <button class="btn btn-primary" onclick="openSubmissionModal()">카카오톡으로 제출</button>
         <button class="btn btn-plain" style="background:#e2e8f0" onclick="copyDailySubmission()">내용 복사</button>
       </div>
-      <div class="submission-note" id="submission-note">휴대폰 공유 화면에서 카카오톡과 오픈채팅방을 선택하세요.</div>
+      <div class="submission-note" id="submission-note">내용 복사 후 제출방이 열리면 붙여넣어 전송하세요. 제출방은 더보기에서 등록할 수 있습니다.</div>
       </section>
     </div>
   </div>
 
   <!-- 사용 탭 (기록) — 상단에 오늘 실적 -->
   <div class="tab-panel" id="tab-usage">
-    <div class="card record-metrics-card">
-      <div class="driver-section-title"><h2>오늘 실적</h2><span class="hint" id="driver-metric-date">오늘 기준</span></div>
+    <section class="driver-card secondary-card record-metrics-card">
+      <div class="submission-head">
+        <div>
+          <div class="submission-title">오늘 실적</div>
+          <div class="submission-description">선택한 날짜 기준 운행·작업 수치입니다.</div>
+        </div>
+        <span class="hint" id="driver-metric-date">오늘 기준</span>
+      </div>
       <div class="home-summary-metrics" id="driver-metrics"></div>
-      <p class="hint" style="margin-top:8px;">선택한 날짜 기준 운영 수치입니다. 홈에는 상태·빠른 실행·오늘 기록 공유를 표시합니다.</p>
-    </div>
-    <div class="card record-service-card">
-      <div class="driver-section-title"><h2>정비 주기 알림</h2><span class="hint">실시일 이후 운행 합계</span></div>
+    </section>
+    <section class="driver-card secondary-card service-interval-card record-service-card">
+      <div class="submission-head">
+        <div>
+          <div class="submission-title">정비 주기</div>
+          <div class="submission-description">DPF·구리스·엔진/미션/대우 오일 · 실시일 이후 운행 합계 (당일 제외)</div>
+        </div>
+      </div>
       <div id="record-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
-      <p class="hint" style="margin-top:8px;">DPF·구리스·엔진/미션/대우 오일 교환 기준입니다. 실시 당일 운행은 합계에서 제외합니다.</p>
-    </div>
+    </section>
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg>계기 기록 입력</div>
 
@@ -838,8 +857,22 @@
     </div>
   </div>
 
-  <!-- 이력 탭 -->
+  <!-- 이력 탭 (하단 기록) -->
   <div class="tab-panel" id="tab-trend">
+    <section class="driver-card secondary-card">
+      <div class="submission-head">
+        <div>
+          <div class="submission-title">기록 입력</div>
+          <div class="submission-description">사용·작업·주유·정비를 이어서 입력합니다.</div>
+        </div>
+      </div>
+      <div class="operation-button-stack home-quick-actions" style="margin-top:8px;">
+        <button class="btn operation-primary" type="button" onclick="switchTab('usage')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>사용·계기</span></button>
+        <button class="btn operation-primary" type="button" onclick="switchTab('work')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg><span>작업</span></button>
+        <button class="btn operation-primary" type="button" onclick="switchTab('fuel')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fuel"></use></svg><span>주유</span></button>
+        <button class="btn operation-primary" type="button" onclick="switchTab('maint')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wrench"></use></svg><span>정비</span></button>
+      </div>
+    </section>
     <div class="card">
       <div class="card-title trend-card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg><span id="usage-trend-title">최근 7일 운행시간</span><select class="form-select trend-type-select" id="trend-type" aria-label="기간별 기록 종류"><option value="usage">운행</option><option value="work">작업</option><option value="fuel">주유</option><option value="maint">정비</option></select><span class="trend-range-toggle"><button class="trend-range-button active" id="trend-range-week" type="button">최근 7일</button><button class="trend-range-button" id="trend-range-month" type="button">월별</button></span></div>
       <div class="trend-summary hidden" id="trend-summary" aria-live="polite"></div>
@@ -1004,23 +1037,36 @@
 <div id="more-modal" class="modal-overlay hidden">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="more-title">
     <div class="card-title" id="more-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-more"></use></svg>더보기</div>
-    <button class="btn btn-fuel" id="install-header-button" type="button" onclick="closeMoreMenu();openInstallGuide()">장비온 앱 설치</button>
-    <button class="btn btn-admin-mode" type="button" onclick="closeMoreMenu();switchMode('admin')">통합관리 모드</button>
+    <p class="modal-hint">데이터·표시·앱 설정은 여기에서 관리합니다. 장비 등록·수정은 하단 「장비」 탭을 사용하세요.</p>
+    <div class="more-menu-group">
+      <div class="plan-feature-title" style="margin:8px 0 6px;">데이터</div>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('storage')">저장 및 용량</button>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('photos')">사진 정리</button>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('backup')">백업 · 복원</button>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('kakao')">카카오 제출방</button>
+    </div>
+    <div class="more-menu-group">
+      <div class="plan-feature-title" style="margin:12px 0 6px;">표시</div>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('font')">글자 크기</button>
+    </div>
+    <div class="more-menu-group">
+      <div class="plan-feature-title" style="margin:12px 0 6px;">앱 · 안내</div>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('version')">버전 · 업데이트</button>
+      <button class="btn btn-fuel" id="install-header-button" type="button" onclick="closeMoreMenu();openInstallGuide()">홈 화면에 설치</button>
+      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openFreePlanGuide('details')">무료 플랜 안내</button>
+      <button class="btn btn-admin-mode" type="button" onclick="closeMoreMenu();switchMode('admin')">통합관리 모드</button>
+    </div>
     <button class="btn btn-plain" type="button" onclick="closeMoreMenu()">닫기</button>
   </div>
 </div>
 
-<!-- 알림 기능 안내 -->
-<div id="alert-coming-soon-modal" class="modal-overlay hidden">
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="alert-coming-soon-title">
-    <div class="card-title" id="alert-coming-soon-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-bell"></use></svg>알림 기능 준비 중</div>
-    <p class="modal-hint">장비온 알림은 다음 단계에서 제공될 예정입니다.</p>
-    <div class="checklist-list">
-      <div class="checklist-item"><span class="checklist-label">기록 미입력 알림</span><span class="hint">예정</span></div>
-      <div class="checklist-item"><span class="checklist-label">정비·점검 예정일 알림</span><span class="hint">예정</span></div>
-      <div class="checklist-item"><span class="checklist-label">고장·운행 제한 알림</span><span class="hint">예정</span></div>
-    </div>
-    <button class="btn btn-primary" type="button" onclick="closeAlertComingSoon()">확인</button>
+<!-- 알림 허브 -->
+<div id="alerts-hub-modal" class="modal-overlay hidden">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="alerts-hub-title">
+    <div class="card-title" id="alerts-hub-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-bell"></use></svg>알림</div>
+    <p class="modal-hint">오늘 미입력과 정비 주기(DPF·구리스)를 모았습니다. 항목을 누르면 해당 화면으로 이동합니다.</p>
+    <div id="alerts-hub-list" class="alerts-hub-list" aria-live="polite"></div>
+    <button class="btn btn-plain" type="button" onclick="closeAlertsHub()">닫기</button>
   </div>
 </div>
 
@@ -1035,32 +1081,18 @@
   </div>
 </div>
 
-<!-- 설정(장비/백업/복원) 모달 -->
+<!-- 장비 관리 (장비 탭 전용) -->
 <div id="settings-modal" class="modal-overlay hidden">
   <div class="modal-card">
-    <div class="card-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-settings"></use></svg>장비 및 데이터 관리</div>
-    <div class="app-version-row" id="app-version-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 12px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid var(--border);">
-      <div>
-        <div style="font-size:.78rem;font-weight:800;color:var(--text);">앱 버전</div>
-        <div class="hint" style="margin:2px 0 0;" id="app-version-text">확인 중</div>
-      </div>
-      <button class="btn btn-plain" type="button" id="btn-check-update" style="width:auto;min-height:36px;padding:8px 12px;font-size:.78rem;">업데이트 확인</button>
-    </div>
-    <div class="plan-summary">
-      <div class="plan-summary-head">
-        <div>
-          <div class="plan-name">장비온 무료</div>
-          <div class="plan-description">장비 1대의 기본 기록과 카카오톡 공유</div>
-        </div>
-        <span class="plan-chip">MVP 안내</span>
-      </div>
+    <div class="card-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-settings"></use></svg>장비 관리</div>
+    <p class="modal-hint">등록 장비를 선택·추가·수정합니다. 백업·글자 크기 등 데이터 설정은 하단 「더보기」에 있습니다.</p>
+    <div class="plan-summary" style="margin-top:10px;">
       <div class="plan-usage"><span>등록 장비</span><strong id="plan-equipment-count">1대 · 무료 안내 기준 1대</strong></div>
       <div class="plan-meter"><div id="plan-equipment-bar"></div></div>
-      <button class="plan-detail-button" type="button" onclick="openFreePlanGuide('details')">무료 플랜 자세히 보기 →</button>
     </div>
     <div class="equipment-list" id="equipment-list"></div>
     <button class="btn btn-success" onclick="showEquipmentForm()">＋ 새 장비 등록</button>
-    <div id="equipment-form" class="install-section hidden">
+<div id="equipment-form" class="install-section hidden">
       <input type="hidden" id="equipment-edit-id">
       <div class="form-group">
         <label class="form-label">장비 이름 *</label>
@@ -1099,7 +1131,28 @@
         <button class="btn btn-plain" onclick="hideEquipmentForm()">취소</button>
       </div>
     </div>
-    <div class="font-size-section">
+    <button class="btn btn-plain" onclick="closeSettings()">닫기</button>
+  </div>
+</div>
+
+<!-- 데이터·표시·앱 설정 (더보기) -->
+<div id="data-settings-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="card-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-settings"></use></svg>데이터 · 설정</div>
+    <p class="modal-hint">저장·백업·글자·버전을 관리합니다.</p>
+
+    <div id="data-panel-version" class="data-settings-panel">
+      <div class="app-version-row" id="app-version-row" style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 12px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid var(--border);">
+        <div>
+          <div style="font-size:.78rem;font-weight:800;color:var(--text);">앱 버전</div>
+          <div class="hint" style="margin:2px 0 0;" id="app-version-text">확인 중</div>
+        </div>
+        <button class="btn btn-plain" type="button" id="btn-check-update" style="width:auto;min-height:36px;padding:8px 12px;font-size:.78rem;">업데이트 확인</button>
+      </div>
+    </div>
+
+    <div id="data-panel-font" class="data-settings-panel">
+<div class="font-size-section">
       <div class="card-title" style="margin-bottom:8px"><span style="font-weight:800">Tt</span> 글자 크기</div>
       <p class="modal-hint" style="margin-top:0">현장·야외에서도 잘 보이도록 글자 크기를 바꿀 수 있습니다.</p>
       <div class="font-size-list" id="font-size-list" role="radiogroup" aria-label="글자 크기">
@@ -1140,22 +1193,45 @@
         </label>
       </div>
     </div>
+        </div>
+
+    <div id="data-panel-storage" class="data-settings-panel">
     <p class="modal-hint">기록은 현재 기기에 저장됩니다. 텍스트는 보존하고 사진만 정리할 수 있습니다. 기기 변경 전에 백업 파일을 내려받으세요.</p>
     <div>
       <div class="hint" id="storage-text">저장공간 사용량 계산 중</div>
       <div class="storage-meter"><div id="storage-bar"></div></div>
       <div class="hint" id="storage-action-hint" style="margin-top:6px;">저장소: IndexedDB · 사진 분리 저장</div>
     </div>
+    </div>
+
+    <div id="data-panel-photos" class="data-settings-panel">
     <div class="install-section" style="margin:12px 0;">
       <div class="plan-feature-title" style="margin-bottom:8px;">사진 정리</div>
       <p class="hint" style="margin-bottom:10px;">텍스트 기록은 남기고 오래된 사진만 삭제합니다. (기본 보관 90일)</p>
       <button class="btn btn-fuel" type="button" onclick="purgePhotos30()">30일 이전 사진 삭제</button>
       <button class="btn btn-plain" type="button" onclick="purgePhotos90()" style="margin-top:8px;">90일 이전 사진 삭제</button>
     </div>
+    </div>
+
+    <div id="data-panel-backup" class="data-settings-panel">
     <button class="btn btn-primary" onclick="exportBackup()">⬇ 백업 내보내기</button>
     <button class="btn btn-fuel" onclick="document.getElementById('import-file').click()">⬆ 백업 가져오기</button>
     <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importBackup(event)">
-    <button class="btn btn-plain" onclick="closeSettings()">닫기</button>
+    </div>
+
+    <div id="data-panel-kakao" class="data-settings-panel">
+      <div class="plan-feature-title" style="margin-bottom:8px;">카카오 제출방 (반자동)</div>
+      <p class="hint" style="margin-bottom:10px;">오픈채팅 또는 제출용 카카오 링크를 저장하면, 제출 시 내용 복사 후 해당 방이 열립니다. 붙여넣기·전송은 한 번 필요합니다.</p>
+      <div class="form-group">
+        <label class="form-label">제출방 링크</label>
+        <input class="form-input" id="inp-submission-room-url" type="url" placeholder="https://open.kakao.com/o/xxxx" autocomplete="off">
+      </div>
+      <button class="btn btn-primary" type="button" onclick="saveSubmissionRoomUrl()">링크 저장</button>
+      <button class="btn btn-plain" type="button" onclick="clearSubmissionRoomUrl()" style="margin-top:8px;">링크 삭제</button>
+      <p class="hint" id="submission-room-status" style="margin-top:10px;">등록된 링크 없음</p>
+    </div>
+
+    <button class="btn btn-plain" onclick="closeDataSettings()">닫기</button>
   </div>
 </div>
 
@@ -1256,7 +1332,7 @@
   <button class="bottom-nav-button active" data-bottom-nav="home" type="button" onclick="navigateBottom('home')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg><span>홈</span></button>
   <button class="bottom-nav-button" data-bottom-nav="equipment" type="button" onclick="navigateBottom('equipment')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-equipment"></use></svg><span>장비</span></button>
   <button class="bottom-nav-button" data-bottom-nav="records" type="button" onclick="navigateBottom('records')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-list"></use></svg><span>기록</span></button>
-  <button class="bottom-nav-button" data-bottom-nav="alerts" type="button" onclick="navigateBottom('alerts')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg><span>알림</span></button>
+  <button class="bottom-nav-button" data-bottom-nav="alerts" type="button" onclick="navigateBottom('alerts')"><span class="bottom-nav-icon-wrap"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg><span id="alerts-badge" class="nav-badge hidden" aria-hidden="true">0</span></span><span>알림</span></button>
   <button class="bottom-nav-button" data-bottom-nav="more" type="button" onclick="navigateBottom('more')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-more"></use></svg><span>더보기</span></button>
 </nav>
 
@@ -1782,6 +1858,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.4.3"></script>
+<script src="./app.js?v=3.5.0"></script>
 </body>
 </html>

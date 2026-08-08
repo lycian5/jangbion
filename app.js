@@ -5,7 +5,8 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.4.3';
+  const APP_VERSION = '3.5.0';
+  const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
   const MAX_WORK_PHOTOS = 4;
@@ -835,18 +836,100 @@
     $('submission-maint-state').textContent = submission.maintenanceRecords.length ? `${submission.maintenanceRecords.length}건 입력` : '없음 · 선택';
     const status = $('submission-status');
     const note = $('submission-note');
+    const roomUrl = getSubmissionRoomUrl();
     if (!submission.existing) {
       status.textContent = '공유 필요'; status.className = 'submission-status pending';
-      note.textContent = '휴대폰 공유 화면에서 카카오톡과 오픈채팅방을 선택하세요.';
+      note.textContent = roomUrl
+        ? '제출 시 내용 복사 후 등록된 제출방이 열립니다. 붙여넣어 전송하세요.'
+        : '제출 시 내용을 복사합니다. 더보기 → 카카오 제출방에 오픈채팅 링크를 등록하면 방이 함께 열립니다.';
     } else if (submission.existing.sourceSignature !== submission.sourceSignature) {
       status.textContent = '다시 공유 필요'; status.className = 'submission-status changed';
       note.textContent = `저장 기록이 변경되었습니다. 수정본 ${submission.displayCode}을 다시 공유하세요.`;
     } else if (submission.existing.action === 'share') {
       status.textContent = '공유 열림'; status.className = 'submission-status opened';
-      note.textContent = '카카오톡 공유 화면을 열었습니다. 실제 전송 여부는 오픈채팅방에서 확인하세요.';
+      note.textContent = roomUrl
+        ? '제출방을 열었습니다. 채팅에 붙여넣은 뒤 전송 여부를 확인하세요.'
+        : '공유 화면을 열었습니다. 카카오톡에서 전송 여부를 확인하세요.';
     } else {
       status.textContent = '내용 복사됨'; status.className = 'submission-status copied';
-      note.textContent = '복사한 내용을 카카오톡 오픈채팅방에 붙여넣어 전송하세요.';
+      note.textContent = '복사한 내용을 카카오톡 제출방에 붙여넣어 전송하세요.';
+    }
+  }
+
+
+  function getSubmissionRoomUrl() {
+    try {
+      const value = (localStorage.getItem(SUBMISSION_ROOM_KEY) || '').trim();
+      return value || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function isSafeSubmissionUrl(url) {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+      const host = parsed.hostname.toLowerCase();
+      return host === 'open.kakao.com' || host.endsWith('.kakao.com') || host === 'kakao.com';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function refreshSubmissionRoomUi() {
+    const input = $('inp-submission-room-url');
+    const status = $('submission-room-status');
+    const url = getSubmissionRoomUrl();
+    if (input) input.value = url;
+    if (status) {
+      status.textContent = url
+        ? `등록됨 · ${url.length > 42 ? `${url.slice(0, 42)}…` : url}`
+        : '등록된 링크 없음 · 제출 시 복사만 하거나 기기 공유 화면을 사용합니다.';
+    }
+  }
+
+  function saveSubmissionRoomUrl() {
+    const input = $('inp-submission-room-url');
+    const raw = (input?.value || '').trim();
+    if (!raw) {
+      showToast('제출방 링크를 입력해주세요.');
+      return;
+    }
+    if (!isSafeSubmissionUrl(raw)) {
+      showToast('카카오 오픈채팅 등 https://open.kakao.com 링크만 저장할 수 있습니다.');
+      return;
+    }
+    try {
+      localStorage.setItem(SUBMISSION_ROOM_KEY, raw);
+      refreshSubmissionRoomUi();
+      showToast('제출방 링크를 저장했습니다.');
+    } catch (error) {
+      showToast('링크를 저장하지 못했습니다.');
+    }
+  }
+
+  function clearSubmissionRoomUrl() {
+    try { localStorage.removeItem(SUBMISSION_ROOM_KEY); } catch (error) {}
+    refreshSubmissionRoomUi();
+    showToast('제출방 링크를 삭제했습니다.');
+  }
+
+  function openSubmissionRoom(url = getSubmissionRoomUrl()) {
+    if (!url) return false;
+    try {
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        window.location.href = url;
+      }
+      return true;
+    } catch (error) {
+      try {
+        window.location.href = url;
+        return true;
+      } catch (error2) {
+        return false;
+      }
     }
   }
 
@@ -915,7 +998,7 @@
     if (markSubmissionAction(submission, 'copy')) {
       renderSubmissionCard();
       $('submission-preview').value = prepareDailySubmission().text;
-      showToast('제출 내용을 복사했습니다. 카카오톡에 붙여넣으세요.');
+      showToast(getSubmissionRoomUrl() ? '복사했습니다. 제출방을 열고 붙여넣으세요.' : '복사했습니다. 카카오톡에 붙여넣으세요.');
       return true;
     }
     return false;
@@ -923,20 +1006,50 @@
 
   async function shareDailySubmission() {
     const submission = prepareDailySubmission();
-    if (!navigator.share) {
-      await copyDailySubmission();
-      showToast('이 기기는 공유 화면을 지원하지 않아 내용을 복사했습니다.');
+    const roomUrl = getSubmissionRoomUrl();
+
+    // 1) 항상 먼저 복사 (붙여넣기용)
+    const copied = await writeClipboardText(submission.text);
+    if (copied) {
+      markSubmissionAction(submission, roomUrl ? 'share' : 'copy');
+      renderSubmissionCard();
+    }
+
+    // 2) 제출방 등록 시: 방 열기 (반자동)
+    if (roomUrl) {
+      const opened = openSubmissionRoom(roomUrl);
+      closeSubmissionModal();
+      if (copied && opened) {
+        showToast('복사했습니다. 열린 채팅에 붙여넣고 전송하세요.');
+      } else if (copied) {
+        showToast('복사했습니다. 카카오톡에서 제출방을 열고 붙여넣으세요.');
+      } else {
+        showToast('방 링크는 열었습니다. 미리보기에서 내용을 복사해 붙여넣으세요.');
+        openSubmissionModal();
+      }
       return;
     }
-    try {
-      await navigator.share({ title: '장비온 장비기록', text: submission.text });
-      if (markSubmissionAction(submission, 'share')) {
-        renderSubmissionCard();
-        closeSubmissionModal();
-        showToast('💬 공유 화면을 열었습니다. 전송 여부를 확인해주세요.');
+
+    // 3) 링크 없음: 기기 공유 시트 또는 복사만
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: '장비온 장비기록', text: submission.text });
+        if (markSubmissionAction(submission, 'share')) {
+          renderSubmissionCard();
+          closeSubmissionModal();
+          showToast('공유 화면을 열었습니다. 카카오톡을 선택해 전송하세요.');
+        }
+        return;
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
       }
-    } catch (error) {
-      if (error?.name !== 'AbortError') showToast('공유 화면을 열지 못했습니다. 내용 복사를 이용해주세요.');
+    }
+
+    if (copied) {
+      showToast('복사했습니다. 더보기 → 카카오 제출방에 링크를 등록하면 방이 함께 열립니다.');
+    } else {
+      showToast('복사에 실패했습니다. 미리보기에서 직접 복사해주세요.');
+      openSubmissionModal();
     }
   }
 
@@ -1172,14 +1285,16 @@
     };
   }
 
-  function renderServiceAlertList(container, keys) {
+  function renderServiceAlertList(container, keys, options = {}) {
     if (!container) return;
     const asOf = selectedDate();
+    const compact = Boolean(options.compact);
     const alerts = keys.map(key => buildServiceIntervalAlert(key, DB.currentEquipmentId, asOf)).filter(Boolean);
     container.replaceChildren(...alerts.map(alert => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `service-alert ${alert.level === 'warn' ? 'warn' : alert.level === 'none' ? '' : 'ok'}`;
+      const levelClass = alert.level === 'warn' ? 'warn' : alert.level === 'none' ? 'none' : 'ok';
+      btn.className = `service-alert ${levelClass}`;
       btn.onclick = () => switchTab('maint');
       const title = document.createElement('div');
       title.className = 'service-alert-title';
@@ -1187,22 +1302,143 @@
       const meta = document.createElement('div');
       meta.className = 'service-alert-meta';
       meta.textContent = alert.meta;
+      btn.append(title, meta);
+      if (!compact) {
+        const detail = document.createElement('div');
+        detail.className = 'service-alert-detail';
+        detail.textContent = alert.detail;
+        btn.append(detail);
+      } else if (alert.serviceDate) {
+        const detail = document.createElement('div');
+        detail.className = 'service-alert-detail';
+        detail.textContent = `기준 ${alert.serviceDate}`;
+        btn.append(detail);
+      }
+      return btn;
+    }));
+  }
+
+  function renderRecordServiceIntervalAlerts() {
+    // 기록(사용) 탭: 전체 + 상세
+    renderServiceAlertList($('record-service-interval-alerts'), SERVICE_RECORD_KEYS, { compact: false });
+  }
+
+  function collectAlertItems() {
+    const items = [];
+    const submission = prepareDailySubmission();
+    if (!submission.dayStatus) {
+      if (!submission.usageRecord) {
+        items.push({
+          id: 'missing-usage',
+          level: 'warn',
+          title: '사용 기록 미입력',
+          meta: '오늘 계기·운행 기록이 없습니다',
+          detail: '사용 탭에서 입력하세요.',
+          action: () => { closeAlertsHub(); switchTab('usage'); }
+        });
+      }
+      if (!submission.workRecords.length) {
+        items.push({
+          id: 'missing-work',
+          level: 'warn',
+          title: '작업 기록 미입력',
+          meta: '오늘 작업 기록이 없습니다',
+          detail: '작업 탭에서 입력하세요.',
+          action: () => { closeAlertsHub(); switchTab('work'); }
+        });
+      }
+    }
+    SERVICE_HOME_KEYS.forEach(key => {
+      const alert = buildServiceIntervalAlert(key);
+      if (!alert) return;
+      // 알림 허브: 주의(D+1~7) 또는 기록 없음 표시. ok도 요약으로 표시
+      const show = alert.level === 'warn' || alert.level === 'none' || alert.level === 'ok';
+      if (!show) return;
+      items.push({
+        id: `service-${key}`,
+        level: alert.level === 'ok' ? 'ok' : (alert.level === 'none' ? 'none' : 'warn'),
+        title: `정비 주기 · ${alert.title}`,
+        meta: alert.meta,
+        detail: alert.detail,
+        action: () => { closeAlertsHub(); switchTab('maint'); }
+      });
+    });
+    const fault = typeof blockingFault === 'function' ? blockingFault() : null;
+    if (fault) {
+      items.push({
+        id: 'fault',
+        level: 'warn',
+        title: '운행 제한 · 고장',
+        meta: fault.symptom || '미해결 고장',
+        detail: '홈에서 상태를 확인하세요.',
+        action: () => { closeAlertsHub(); navigateBottom('home'); }
+      });
+    }
+    return items;
+  }
+
+  function getAlertsBadgeCount() {
+    return collectAlertItems().filter(item => item.level === 'warn' || item.level === 'none').length;
+  }
+
+  function renderAlertsBadge() {
+    const n = getAlertsBadgeCount();
+    const label = n > 9 ? '9+' : String(n);
+    ['alerts-badge', 'alerts-badge-header'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      if (n <= 0) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        el.setAttribute('aria-hidden', 'true');
+      } else {
+        el.classList.remove('hidden');
+        el.textContent = label;
+        el.setAttribute('aria-hidden', 'false');
+      }
+    });
+  }
+
+  function renderAlertsHub() {
+    const list = $('alerts-hub-list');
+    if (!list) return;
+    const items = collectAlertItems();
+    if (!items.length) {
+      list.replaceChildren();
+      const empty = document.createElement('div');
+      empty.className = 'alerts-hub-empty';
+      empty.textContent = '표시할 알림이 없습니다. 오늘 기록과 정비 주기가 정상입니다.';
+      list.append(empty);
+      return;
+    }
+    list.replaceChildren(...items.map(item => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const levelClass = item.level === 'warn' ? 'warn' : item.level === 'none' ? 'none' : 'ok';
+      btn.className = `service-alert ${levelClass}`;
+      btn.addEventListener('click', () => item.action && item.action());
+      const title = document.createElement('div');
+      title.className = 'service-alert-title';
+      title.textContent = item.title;
+      const meta = document.createElement('div');
+      meta.className = 'service-alert-meta';
+      meta.textContent = item.meta;
       const detail = document.createElement('div');
       detail.className = 'service-alert-detail';
-      detail.textContent = alert.detail;
+      detail.textContent = item.detail || '';
       btn.append(title, meta, detail);
       return btn;
     }));
   }
 
-  function renderServiceIntervalAlerts() {
-    // 홈: DPF·구리스만
-    renderServiceAlertList($('service-interval-alerts'), SERVICE_HOME_KEYS);
+  function openAlertsHub() {
+    renderAlertsHub();
+    renderAlertsBadge();
+    $('alerts-hub-modal')?.classList.remove('hidden');
   }
 
-  function renderRecordServiceIntervalAlerts() {
-    // 기록(사용) 탭: DPF·구리스·오일류 전부
-    renderServiceAlertList($('record-service-interval-alerts'), SERVICE_RECORD_KEYS);
+  function closeAlertsHub() {
+    $('alerts-hub-modal')?.classList.add('hidden');
   }
 
   function renderDriverStatusOverview() {
@@ -1215,24 +1451,24 @@
     const quickFuel = fuels.length > 0 && fuels.every(item => item.quick);
 
     if (!fuels.length) {
-      $('driver-fuel-status-value').textContent = '기록 없음';
-      $('driver-fuel-status-detail').textContent = '주유 기록을 추가할 수 있습니다.';
+      if ($('driver-fuel-status-value')) $('driver-fuel-status-value').textContent = '기록 없음';
+      if ($('driver-fuel-status-detail')) $('driver-fuel-status-detail').textContent = '주유 기록을 추가할 수 있습니다.';
     } else if (quickFuel) {
-      $('driver-fuel-status-value').textContent = `주유 완료 · ${fuels.length}건`;
-      $('driver-fuel-status-detail').textContent = '상세 수량 없이 완료로 기록했습니다.';
+      if ($('driver-fuel-status-value')) $('driver-fuel-status-value').textContent = `주유 완료 · ${fuels.length}건`;
+      if ($('driver-fuel-status-detail')) $('driver-fuel-status-detail').textContent = '상세 수량 없이 완료로 기록했습니다.';
     } else {
-      $('driver-fuel-status-value').textContent = `${formatNumber(fuelLiters, 1)}L · ${fuels.length}건`;
-      $('driver-fuel-status-detail').textContent = fuelAmount > 0 ? `총 ${formatNumber(fuelAmount)}원` : '금액 정보 없음';
+      if ($('driver-fuel-status-value')) $('driver-fuel-status-value').textContent = `${formatNumber(fuelLiters, 1)}L · ${fuels.length}건`;
+      if ($('driver-fuel-status-detail')) $('driver-fuel-status-detail').textContent = fuelAmount > 0 ? `총 ${formatNumber(fuelAmount)}원` : '금액 정보 없음';
     }
 
     const maintenanceCost = maintenances.reduce((sum, item) => sum + numberOr(item.cost), 0);
     if (maintenances.length) {
       const types = maintenances.map(item => item.type || '정비').join(', ');
-      $('driver-maint-status-value').textContent = `${maintenances.length}건 · ${formatNumber(maintenanceCost)}원`;
-      $('driver-maint-status-detail').textContent = types;
+      if ($('driver-maint-status-value')) $('driver-maint-status-value').textContent = `${maintenances.length}건 · ${formatNumber(maintenanceCost)}원`;
+      if ($('driver-maint-status-detail')) $('driver-maint-status-detail').textContent = types;
     } else {
-      $('driver-maint-status-value').textContent = '당일 기록 없음';
-      $('driver-maint-status-detail').textContent = maintenanceDueText();
+      if ($('driver-maint-status-value')) $('driver-maint-status-value').textContent = '당일 기록 없음';
+      if ($('driver-maint-status-detail')) $('driver-maint-status-detail').textContent = maintenanceDueText();
     }
 
     // 홈 상태 필 (상태·빠른 실행 중심)
@@ -1256,10 +1492,12 @@
         el.textContent = labelMissing;
       }
     };
-    setPill('home-status-usage', hasUsage, '사용 · 기록됨', '사용 · 미입력');
-    setPill('home-status-work', hasWork, '작업 · 기록됨', '작업 · 미입력');
-    setPill('home-status-fuel', fuels.length > 0, `주유 · ${fuels.length}건`, '주유 · 없음', true);
-    setPill('home-status-maint', maintenances.length > 0, `정비 · ${maintenances.length}건`, '정비 · 없음', true);
+    if ($('home-status-usage')) {
+      setPill('home-status-usage', hasUsage, '사용 · 기록됨', '사용 · 미입력');
+      setPill('home-status-work', hasWork, '작업 · 기록됨', '작업 · 미입력');
+      setPill('home-status-fuel', fuels.length > 0, `주유 · ${fuels.length}건`, '주유 · 없음', true);
+      setPill('home-status-maint', maintenances.length > 0, `정비 · ${maintenances.length}건`, '정비 · 없음', true);
+    }
   }
 
   function recentActivities() {
@@ -1315,7 +1553,7 @@
     operationButton.replaceChildren(svgIcon(state.action === 'fault' ? 'alert' : state.action === 'equipment' ? 'settings' : 'gauge'), document.createTextNode(state.button));
     renderDriverMetrics();
     renderDriverStatusOverview();
-    renderServiceIntervalAlerts();
+    renderAlertsBadge();
     renderDriverRecordButtons();
     syncFuelQuickUI();
     renderSubmissionCard();
@@ -1405,8 +1643,8 @@
 
   function openMoreMenu() { $('more-modal').classList.remove('hidden'); }
   function closeMoreMenu() { $('more-modal').classList.add('hidden'); }
-  function openAlertComingSoon() { $('alert-coming-soon-modal').classList.remove('hidden'); }
-  function closeAlertComingSoon() { $('alert-coming-soon-modal').classList.add('hidden'); }
+  function openAlertComingSoon() { openAlertsHub(); }
+  function closeAlertComingSoon() { closeAlertsHub(); }
   function openPhotoSourcePicker(inputId) {
     photoSourceInputId = inputId;
     $('photo-source-modal').classList.remove('hidden');
@@ -1428,9 +1666,9 @@
   function navigateBottom(target) {
     document.querySelectorAll('[data-bottom-nav]').forEach(button => button.classList.toggle('active', button.dataset.bottomNav === target));
     if (target === 'home') { switchMode('record'); switchTab('summary'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-    if (target === 'equipment') openEquipmentManager();
-    if (target === 'records') switchTab('trend');
-    if (target === 'alerts') openAlertComingSoon();
+    if (target === 'equipment') { switchMode('record'); openEquipmentManager(); }
+    if (target === 'records') { switchMode('record'); switchTab('trend'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (target === 'alerts') openAlertsHub();
     if (target === 'more') openMoreMenu();
   }
 
@@ -2275,6 +2513,34 @@
     openSettings();
   }
 
+  function openDataSettings(focus = 'storage') {
+    updateStorageMeter();
+    applyFontSize(getFontSize());
+    updateAppVersionLabel();
+    const panels = {
+      version: 'data-panel-version',
+      font: 'data-panel-font',
+      storage: 'data-panel-storage',
+      photos: 'data-panel-photos',
+      backup: 'data-panel-backup',
+      kakao: 'data-panel-kakao'
+    };
+    refreshSubmissionRoomUi();
+    const keys = Object.keys(panels);
+    const showAll = !focus || focus === 'all' || !panels[focus];
+    keys.forEach(key => {
+      const el = $(panels[key]);
+      if (!el) return;
+      el.classList.toggle('is-hidden', !showAll && key !== focus);
+      el.style.outline = '';
+    });
+    $('data-settings-modal')?.classList.remove('hidden');
+  }
+
+  function closeDataSettings() {
+    $('data-settings-modal')?.classList.add('hidden');
+  }
+
   function getFontSize() {
     const value = localStorage.getItem(FONT_SIZE_KEY) || 'normal';
     return FONT_SIZE_OPTIONS.includes(value) ? value : 'normal';
@@ -2301,12 +2567,10 @@
   }
 
   function openSettings() {
+    // 장비 탭 전용: 장비 목록·등록만
     hideEquipmentForm();
     renderEquipmentList();
     updatePlanSummary();
-    updateStorageMeter();
-    applyFontSize(getFontSize());
-    updateAppVersionLabel();
     $('settings-modal').classList.remove('hidden');
   }
 
@@ -2550,6 +2814,7 @@
         updateEquipmentUI();
         updatePlanSummary();
         closeSettings();
+        closeDataSettings();
         refreshActiveTab();
         updateStorageMeter();
         showToast('⬆ 백업 데이터를 복원했습니다.');
@@ -3007,13 +3272,13 @@
   Object.assign(window, {
     switchTab, switchMode, openEquipmentManager, openSettings, closeSettings, showEquipmentForm, hideEquipmentForm,
     saveEquipment, editEquipment, selectEquipment, deleteEquipment, removeWorkPhoto, deleteHistoryRecord, startNewWorkRecord, editWorkRecord,
-    exportBackup, importBackup, purgePhotos30, purgePhotos90, openInstallGuide, closeInstallGuide, installAppShortcut, copySiteUrl,
+    exportBackup, importBackup, purgePhotos30, purgePhotos90, openDataSettings, closeDataSettings, saveSubmissionRoomUrl, clearSubmissionRoomUrl, openInstallGuide, closeInstallGuide, installAppShortcut, copySiteUrl,
     openFreePlanGuide, closeFreePlanGuide, continueEquipmentRegistration,
     openEquipmentFromAdmin, exportAdminCsv,
     openSubmissionModal, closeSubmissionModal, copyDailySubmission, shareDailySubmission
     , handleOperationPrimaryAction, openDayStatusPanel
     , openInspectionModal, closeInspectionModal, saveInspection, openFaultModal, closeFaultModal, saveFaultReport, resolveLatestFault
-    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
+    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openAlertsHub, closeAlertsHub, renderAlertsBadge, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
   });
 
   boot();
