@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.3';
+  const APP_VERSION = '3.5.4';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -547,6 +547,7 @@
   let currentUsagePhoto = null;
   let currentWorkPhotos = [];
   let editingWorkId = null;
+  let editingMaintId = null;
   let currentFuelReceipt = null;
   let currentInspectionPhoto = null;
   let currentFaultPhoto = null;
@@ -700,6 +701,7 @@
     if (active === 'usage') loadUsageTab();
     if (active === 'work') loadWorkTab();
     if (active === 'fuel') loadFuelTab();
+    if (active === 'maint') loadMaintTab();
     if (active === 'trend') loadHistoryTab();
   }
 
@@ -1213,15 +1215,22 @@
   function renderDriverRecordButtons() {
     const date = selectedDate();
     const equipmentId = DB.currentEquipmentId;
+    const dayOff = Boolean(dayStatusForEquipment(date, equipmentId));
+    const hasUsage = !dayOff && equipmentLogs(DB.dailyLogs).some(item => item.date === date);
+    const opBtn = $('driver-operation-button');
+    if (opBtn && opBtn.dataset.action === 'usage') {
+      opBtn.replaceChildren(svgIcon('gauge'), document.createTextNode(hasUsage || dayOff ? '운행 기록 수정' : '운행 기록 입력'));
+    }
     const buttons = [
-      { id: 'driver-work-button', label: '작업 기록 입력', icon: 'clipboard', records: DB.workLogs, fixed: true },
+      { id: 'driver-work-button', label: '작업 기록', icon: 'clipboard', records: DB.workLogs },
       { id: 'driver-fuel-button', label: '주유 기록', icon: 'fuel', records: DB.fuelLogs },
       { id: 'driver-maint-button', label: '정비 기록', icon: 'wrench', records: DB.maintLogs }
     ];
     buttons.forEach(item => {
       const button = $(item.id);
+      if (!button) return;
       const hasRecord = logsForEquipment(item.records, equipmentId).some(record => record.date === date);
-      button.replaceChildren(svgIcon(item.icon), document.createTextNode(item.fixed ? item.label : `${item.label} ${hasRecord ? '수정' : '입력'}`));
+      button.replaceChildren(svgIcon(item.icon), document.createTextNode(`${item.label} ${hasRecord ? '수정' : '입력'}`));
     });
   }
 
@@ -1322,8 +1331,8 @@
       const levelClass = alert.level === 'warn' ? 'warn' : alert.level === 'none' ? 'none' : 'ok';
       btn.className = `service-alert ${levelClass}`;
       btn.onclick = () => {
-        switchTab('usage');
-        setTimeout(() => $('record-service-interval-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+        openEquipmentManager();
+        setTimeout(() => $('equipment-service-interval-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
       };
       const title = document.createElement('div');
       title.className = 'service-alert-title';
@@ -1348,8 +1357,8 @@
   }
 
   function renderRecordServiceIntervalAlerts() {
-    // 기록(사용) 탭: 전체 + 상세
-    renderServiceAlertList($('record-service-interval-alerts'), SERVICE_RECORD_KEYS, { compact: false });
+    // 장비 탭 하단: 전체 주기 상세
+    renderServiceAlertList($('equipment-service-interval-alerts'), SERVICE_RECORD_KEYS, { compact: false });
   }
 
   function collectAlertItems() {
@@ -1391,11 +1400,11 @@
         detail: alert.detail,
         action: () => {
           closeAlertsHub();
-          switchTab('usage');
+          openEquipmentManager();
           setTimeout(() => {
-            const el = $('record-service-interval-alerts');
+            const el = $('equipment-service-interval-alerts');
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 120);
+          }, 150);
         }
       });
     });
@@ -1722,8 +1731,6 @@
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
     renderDayStatusControls();
     updateUsagePreview();
-    renderDriverMetrics();
-    renderRecordServiceIntervalAlerts();
   }
 
   function renderDayStatusControls() {
@@ -2052,6 +2059,64 @@
     }
   }
 
+
+  function maintRecordsForSelectedDate() {
+    return equipmentLogs(DB.maintLogs)
+      .filter(item => item.date === selectedDate())
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+
+  function renderMaintRecordList() {
+    const records = maintRecordsForSelectedDate();
+    const container = $('maint-record-list');
+    if (!container) return;
+    if (!records.length) {
+      container.replaceChildren(Object.assign(document.createElement('span'), { className: 'hint', textContent: '저장된 정비가 없습니다. 첫 정비를 입력하세요.' }));
+      return;
+    }
+    container.replaceChildren(...records.map((record, index) => {
+      const row = document.createElement('div'); row.className = 'work-record-item';
+      const copy = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = `${index + 1}. ${record.type || '정비'}${numberOr(record.cost) > 0 ? ` · ${formatNumber(record.cost)}원` : ''}`;
+      const detail = document.createElement('span');
+      detail.textContent = [record.manager, record.detail || record.nextDate || '상세 없음'].filter(Boolean).join(' · ');
+      const edit = document.createElement('button');
+      edit.type = 'button'; edit.className = 'work-record-edit'; edit.textContent = '수정';
+      edit.addEventListener('click', () => editMaintRecord(record.id));
+      copy.append(title, detail); row.append(copy, edit); return row;
+    }));
+  }
+
+  function fillMaintForm(record = null) {
+    $('inp-maint-type').value = record?.type || '';
+    $('inp-maint-detail').value = record?.detail || '';
+    $('inp-maint-manager').value = record?.manager || '';
+    $('inp-maint-cost').value = record?.cost ?? '';
+    $('inp-maint-next-date').value = record?.nextDate || '';
+    currentMaintenancePhoto = record?.photo || null;
+    showPhotoPreview('maint-photo-preview', 'maint-photo-img', currentMaintenancePhoto);
+    $('btn-save-maint').textContent = record ? '정비 기록 수정 저장' : '정비 기록 저장';
+  }
+
+  function loadMaintTab() {
+    const record = editingMaintId ? maintRecordsForSelectedDate().find(item => item.id === editingMaintId) : null;
+    if (!record) editingMaintId = null;
+    fillMaintForm(record || null);
+    renderMaintRecordList();
+  }
+
+  function startNewMaintRecord() {
+    editingMaintId = null;
+    loadMaintTab();
+  }
+
+  function editMaintRecord(id) {
+    editingMaintId = id;
+    loadMaintTab();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function saveMaintenance() {
     const type = $('inp-maint-type').value;
     if (!type) {
@@ -2063,18 +2128,29 @@
       showToast('비용을 올바르게 입력해주세요.');
       return;
     }
+    const existing = editingMaintId ? equipmentLogs(DB.maintLogs).find(item => item.id === editingMaintId) : null;
     const record = {
-      id: uid('maint'), equipmentId: DB.currentEquipmentId, date: selectedDate(), type,
+      id: existing?.id || uid('maint'),
+      equipmentId: DB.currentEquipmentId,
+      date: selectedDate(),
+      type,
       detail: $('inp-maint-detail').value.trim().slice(0, 800),
-      manager: $('inp-maint-manager').value.trim().slice(0, 80), cost,
-      nextDate: $('inp-maint-next-date').value || '', photo: currentMaintenancePhoto, createdAt: new Date().toISOString()
+      manager: $('inp-maint-manager').value.trim().slice(0, 80),
+      cost,
+      nextDate: $('inp-maint-next-date').value || '',
+      photo: currentMaintenancePhoto,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
-    if (commit(next => next.maintLogs.push(record))) {
-      ['inp-maint-type', 'inp-maint-detail', 'inp-maint-manager', 'inp-maint-cost', 'inp-maint-next-date'].forEach(id => $(id).value = '');
-      currentMaintenancePhoto = null;
-      showPhotoPreview('maint-photo-preview', 'maint-photo-img', null);
-      showToast('정비 기록을 저장했습니다.');
-      navigateBottom('home');
+    if (commit(next => {
+      if (existing) next.maintLogs = next.maintLogs.map(item => item.id === existing.id ? record : item);
+      else next.maintLogs.push(record);
+    })) {
+      editingMaintId = null;
+      fillMaintForm(null);
+      renderMaintRecordList();
+      showToast(existing ? '정비 기록을 수정했습니다.' : '정비 기록을 저장했습니다.');
+      renderAlertsBadge();
     }
   }
 
@@ -2604,10 +2680,11 @@
   }
 
   function openSettings() {
-    // 장비 탭 전용: 장비 목록·등록만
+    // 장비 탭: 장비 목록·등록 + 하단 정비 주기
     hideEquipmentForm();
     renderEquipmentList();
     updatePlanSummary();
+    renderRecordServiceIntervalAlerts();
     $('settings-modal').classList.remove('hidden');
   }
 
@@ -3230,6 +3307,7 @@
     });
     $('btn-save-work').addEventListener('click', saveWork);
     $('btn-new-work').addEventListener('click', startNewWorkRecord);
+    $('btn-new-maint')?.addEventListener('click', startNewMaintRecord);
     ['chk-fuel-quick', 'chk-fuel-quick-summary'].map($).filter(Boolean).forEach(input => input.addEventListener('change', event => toggleFuelQuick(event.target.checked)));
     $('inp-liters').addEventListener('input', updateFuelPreview);
     $('inp-unit-price').addEventListener('input', updateFuelPreview);
@@ -3315,7 +3393,7 @@
     openSubmissionModal, closeSubmissionModal, copyDailySubmission, shareDailySubmission
     , handleOperationPrimaryAction, openDayStatusPanel
     , openInspectionModal, closeInspectionModal, saveInspection, openFaultModal, closeFaultModal, saveFaultReport, resolveLatestFault
-    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openAlertsHub, closeAlertsHub, renderAlertsBadge, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
+    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openAlertsHub, closeAlertsHub, renderAlertsBadge, startNewMaintRecord, editMaintRecord, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
   });
 
   boot();

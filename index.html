@@ -612,27 +612,8 @@
     </div>
   </div>
 
-  <!-- 사용 탭 (기록) — 상단에 오늘 실적 -->
+  <!-- 사용 탭 (운행·계기 입력만) -->
   <div class="tab-panel" id="tab-usage">
-    <section class="driver-card secondary-card record-metrics-card">
-      <div class="submission-head">
-        <div>
-          <div class="submission-title">오늘 실적</div>
-          <div class="submission-description">선택한 날짜 기준 운행·작업 수치입니다.</div>
-        </div>
-        <span class="hint" id="driver-metric-date">오늘 기준</span>
-      </div>
-      <div class="submission-checklist metrics-checklist" id="driver-metrics"></div>
-    </section>
-    <section class="driver-card secondary-card service-interval-card record-service-card">
-      <div class="submission-head">
-        <div>
-          <div class="submission-title">정비 주기</div>
-          <div class="submission-description">DPF·구리스·엔진/미션/대우 오일 · 실시일 이후 운행 합계 (당일 제외)</div>
-        </div>
-      </div>
-      <div id="record-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
-    </section>
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-gauge"></use></svg>계기 기록 입력</div>
 
@@ -812,6 +793,13 @@
   <div class="tab-panel" id="tab-maint">
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-wrench"></use></svg>정비 기록</div>
+      <div class="work-records" style="margin-bottom:14px;">
+        <div class="work-records-head">
+          <span class="work-records-title">당일 정비 목록</span>
+          <button class="work-record-edit" id="btn-new-maint" type="button">새 정비 추가</button>
+        </div>
+        <div class="work-record-list" id="maint-record-list"></div>
+      </div>
       <div class="form-group">
         <label class="form-label">정비 종류</label>
         <select class="form-select" id="inp-maint-type">
@@ -1144,6 +1132,12 @@
         <button class="btn btn-primary" onclick="saveEquipment()">장비 저장</button>
         <button class="btn btn-plain" onclick="hideEquipmentForm()">취소</button>
       </div>
+    </div>
+
+    <div class="service-interval-card" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+      <div class="submission-title" style="margin-bottom:4px;">정비 주기</div>
+      <p class="hint" style="margin-bottom:8px;">DPF·구리스·엔진/미션/대우 오일 · 실시일 이후 운행 합계</p>
+      <div id="equipment-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
     </div>
     <button class="btn btn-plain" onclick="closeSettings()">닫기</button>
   </div>
@@ -1872,6 +1866,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.5.3"></script>
+<script src="./app.js?v=3.5.4"></script>
 </body>
 </html>
