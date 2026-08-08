@@ -286,6 +286,10 @@
     .submission-status.opened { background:#dbeafe; color:#1d4ed8; }
     .submission-status.copied { background:#e0e7ff; color:#4338ca; }
     .submission-checklist { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+    .metrics-checklist { margin-bottom:0; }
+    .metrics-checklist .submission-check { cursor:default; }
+    .metrics-checklist .submission-check-value.metric-empty { color:var(--sub); font-weight:800; }
+
     .submission-check { background:#fff; border:1px solid var(--border); border-radius:11px; padding:10px; }
     .submission-check-label { color:var(--sub); font-size:.7rem; font-weight:700; }
     .submission-check-value { margin-top:4px; font-size:.82rem; font-weight:900; }
@@ -618,7 +622,7 @@
         </div>
         <span class="hint" id="driver-metric-date">오늘 기준</span>
       </div>
-      <div class="home-summary-metrics" id="driver-metrics"></div>
+      <div class="submission-checklist metrics-checklist" id="driver-metrics"></div>
     </section>
     <section class="driver-card secondary-card service-interval-card record-service-card">
       <div class="submission-head">
@@ -1858,6 +1862,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.5.0"></script>
+<script src="./app.js?v=3.5.1"></script>
 </body>
 </html>

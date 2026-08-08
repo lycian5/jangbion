@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.0';
+  const APP_VERSION = '3.5.1';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -1161,26 +1161,45 @@
     const usage = computeEquipmentUsage(date, equipment.id);
     const works = logsForEquipment(DB.workLogs, equipment.id).filter(item => item.date === date);
     const workHours = works.reduce((sum, item) => sum + numberOr(item.hours), 0);
+    const fuels = logsForEquipment(DB.fuelLogs, equipment.id).filter(item => item.date === date);
+    const fuelLiters = fuels.reduce((sum, item) => sum + numberOr(item.liters), 0);
+    const maintenances = logsForEquipment(DB.maintLogs, equipment.id).filter(item => item.date === date);
+    const maintCost = maintenances.reduce((sum, item) => sum + numberOr(item.cost), 0);
+    const dayStatus = dayStatusForEquipment(date, equipment.id);
+
+    const fuelValue = !fuels.length
+      ? '없음'
+      : (fuels.every(item => item.quick) ? `완료 ${fuels.length}건` : `${formatNumber(fuelLiters, 1)} L`);
+    const maintValue = !maintenances.length
+      ? '없음'
+      : (maintCost > 0 ? `${maintenances.length}건 · ${formatNumber(maintCost)}원` : `${maintenances.length}건`);
+
     return [
-      { label: '운행시간', value: usage.hours.toFixed(1), unit: '시간', icon: 'clock' },
-      { label: '주행거리', value: usage.km.toFixed(1), unit: 'km', icon: 'map' },
-      { label: '작업 건수', value: String(works.length), unit: '건', icon: 'list' },
-      { label: '작업시간', value: workHours.toFixed(1), unit: '시간', icon: 'clipboard' }
+      { label: '운행시간', value: dayStatus ? dayStatusLabel(dayStatus) : `${usage.hours.toFixed(1)} 시간`, empty: !dayStatus && usage.hours <= 0 },
+      { label: '주행거리', value: dayStatus ? '-' : `${usage.km.toFixed(1)} km`, empty: !dayStatus && usage.km <= 0 },
+      { label: '작업 건수', value: dayStatus ? dayStatusLabel(dayStatus) : `${works.length} 건`, empty: !dayStatus && works.length === 0 },
+      { label: '작업시간', value: dayStatus ? '-' : `${workHours.toFixed(1)} 시간`, empty: !dayStatus && workHours <= 0 },
+      { label: '주유', value: fuelValue, empty: !fuels.length },
+      { label: '정비', value: maintValue, empty: !maintenances.length }
     ];
   }
 
   function renderDriverMetrics() {
     const container = $('driver-metrics');
+    if (!container) return;
     const date = selectedDate();
-    $('driver-metric-date').textContent = date === localDateString() ? '오늘 기준' : `${date} 기준`;
+    const dateEl = $('driver-metric-date');
+    if (dateEl) dateEl.textContent = date === localDateString() ? '오늘 기준' : `${date} 기준`;
     container.replaceChildren(...metricDefinitions(currentEquipment(), date).map(metric => {
-      const card = document.createElement('div'); card.className = 'home-status-card home-metric-card';
-      const head = document.createElement('span'); head.className = 'home-status-head';
-      const label = document.createElement('span'); label.textContent = metric.label;
-      head.append(label, svgIcon(metric.icon, 'ui-icon small'));
-      const value = document.createElement('strong'); value.className = 'home-status-value'; value.textContent = `${metric.value}${metric.unit}`;
-      const detail = document.createElement('span'); detail.className = 'home-status-detail'; detail.textContent = '선택한 날짜 기준';
-      card.append(head, value, detail);
+      const card = document.createElement('div');
+      card.className = 'submission-check';
+      const label = document.createElement('div');
+      label.className = 'submission-check-label';
+      label.textContent = metric.label;
+      const value = document.createElement('div');
+      value.className = `submission-check-value${metric.empty ? ' metric-empty' : ' complete'}`;
+      value.textContent = metric.value;
+      card.append(label, value);
       return card;
     }));
   }
