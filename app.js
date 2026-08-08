@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.4';
+  const APP_VERSION = '3.5.6';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -1216,22 +1216,31 @@
     const date = selectedDate();
     const equipmentId = DB.currentEquipmentId;
     const dayOff = Boolean(dayStatusForEquipment(date, equipmentId));
-    const hasUsage = !dayOff && equipmentLogs(DB.dailyLogs).some(item => item.date === date);
-    const opBtn = $('driver-operation-button');
-    if (opBtn && opBtn.dataset.action === 'usage') {
-      opBtn.replaceChildren(svgIcon('gauge'), document.createTextNode(hasUsage || dayOff ? '운행 기록 수정' : '운행 기록 입력'));
-    }
-    const buttons = [
-      { id: 'driver-work-button', label: '작업 기록', icon: 'clipboard', records: DB.workLogs },
-      { id: 'driver-fuel-button', label: '주유 기록', icon: 'fuel', records: DB.fuelLogs },
-      { id: 'driver-maint-button', label: '정비 기록', icon: 'wrench', records: DB.maintLogs }
-    ];
-    buttons.forEach(item => {
-      const button = $(item.id);
+    const hasUsage = dayOff || equipmentLogs(DB.dailyLogs).some(item => item.date === date);
+    const hasWork = logsForEquipment(DB.workLogs, equipmentId).some(record => record.date === date);
+    const hasFuel = logsForEquipment(DB.fuelLogs, equipmentId).some(record => record.date === date);
+    const hasMaint = logsForEquipment(DB.maintLogs, equipmentId).some(record => record.date === date);
+
+    const setBtn = (id, icon, label) => {
+      const button = $(id);
       if (!button) return;
-      const hasRecord = logsForEquipment(item.records, equipmentId).some(record => record.date === date);
-      button.replaceChildren(svgIcon(item.icon), document.createTextNode(`${item.label} ${hasRecord ? '수정' : '입력'}`));
-    });
+      button.replaceChildren(svgIcon(icon), document.createTextNode(label));
+    };
+
+    // 홈 빠른 실행
+    const opBtn = $('driver-operation-button');
+    if (opBtn && (opBtn.dataset.action === 'usage' || !opBtn.dataset.action)) {
+      setBtn('driver-operation-button', 'gauge', hasUsage ? '운행 기록 수정' : '운행 기록 입력');
+    }
+    setBtn('driver-work-button', 'clipboard', hasWork ? '작업 기록 수정' : '작업 기록 입력');
+    setBtn('driver-fuel-button', 'fuel', hasFuel ? '주유 기록 수정' : '주유 기록 입력');
+    setBtn('driver-maint-button', 'wrench', hasMaint ? '정비 기록 수정' : '정비 기록 입력');
+
+    // 기록 탭 기록 입력 (동일 규칙)
+    setBtn('records-usage-button', 'gauge', hasUsage ? '운행 기록 수정' : '운행 기록 입력');
+    setBtn('records-work-button', 'clipboard', hasWork ? '작업 기록 수정' : '작업 기록 입력');
+    setBtn('records-fuel-button', 'fuel', hasFuel ? '주유 기록 수정' : '주유 기록 입력');
+    setBtn('records-maint-button', 'wrench', hasMaint ? '정비 기록 수정' : '정비 기록 입력');
   }
 
 
@@ -2173,16 +2182,21 @@
   function trendValuesForDate(type, date) {
     if (type === 'usage') {
       const usage = computeDailyUsage(date);
-      return { value: usage.hours, count: equipmentLogs(DB.dailyLogs).filter(item => item.date === date).length };
+      const count = equipmentLogs(DB.dailyLogs).filter(item => item.date === date).length;
+      return { value: usage.hours, secondary: usage.km, count };
     }
     const records = equipmentLogs(type === 'work' ? DB.workLogs : type === 'fuel' ? DB.fuelLogs : DB.maintLogs).filter(item => item.date === date);
-    if (type === 'work') return { value: records.reduce((total, item) => total + numberOr(item.hours), 0), count: records.length };
-    if (type === 'fuel') return { value: records.reduce((total, item) => total + numberOr(item.liters), 0), count: records.length };
-    return { value: records.reduce((total, item) => total + numberOr(item.cost), 0), count: records.length };
+    if (type === 'work') return { value: records.reduce((total, item) => total + numberOr(item.hours), 0), secondary: 0, count: records.length };
+    if (type === 'fuel') return { value: records.reduce((total, item) => total + numberOr(item.liters), 0), secondary: 0, count: records.length };
+    return { value: records.reduce((total, item) => total + numberOr(item.cost), 0), secondary: 0, count: records.length };
   }
 
   function formatTrendValue(value, unit) {
     return unit === '원' ? `${formatNumber(Math.round(value))}원` : `${formatNumber(value, 1)}${unit}`;
+  }
+
+  function formatUsageTrendCell(hours, km) {
+    return `${formatNumber(hours, 1)}h\n${formatNumber(km, 1)}km`;
   }
 
   function renderTrendSummary(entries, metadata) {
@@ -2201,10 +2215,21 @@
       const amount = document.createElement('strong'); amount.textContent = value;
       item.append(title, amount); return item;
     };
-    summary.replaceChildren(
-      createItem(`${metadata.metric} 합계`, formatTrendValue(total, metadata.unit)),
-      createItem(`일평균 (${periodLabel})`, formatTrendValue(average, metadata.unit))
-    );
+    if (usageTrendType === 'usage') {
+      const totalKm = entries.reduce((sum, entry) => sum + numberOr(entry.secondary), 0);
+      const avgKm = totalKm / entries.length;
+      summary.replaceChildren(
+        createItem('운행시간 합계', formatTrendValue(total, 'h')),
+        createItem('주행거리 합계', formatTrendValue(totalKm, 'km')),
+        createItem(`시간 일평균 (${periodLabel})`, formatTrendValue(average, 'h')),
+        createItem(`거리 일평균 (${periodLabel})`, formatTrendValue(avgKm, 'km'))
+      );
+    } else {
+      summary.replaceChildren(
+        createItem(`${metadata.metric} 합계`, formatTrendValue(total, metadata.unit)),
+        createItem(`일평균 (${periodLabel})`, formatTrendValue(average, metadata.unit))
+      );
+    }
     summary.classList.remove('hidden');
   }
 
@@ -2221,7 +2246,7 @@
     }
     const values = entries.map(item => item.value);
     const maximum = Math.max(...values, 1);
-    $('usage-trend-title').textContent = `최근 7일 ${metadata.metric}`;
+    $('usage-trend-title').textContent = usageTrendType === 'usage' ? '최근 7일 운행시간·거리' : `최근 7일 ${metadata.metric}`;
     $('trend-type').value = usageTrendType;
     renderTrendSummary(entries, metadata);
     $('usage-trend').classList.remove('monthly');
@@ -2233,7 +2258,12 @@
       column.className = 'trend-col';
       const value = document.createElement('div');
       value.className = 'trend-value';
-      value.textContent = formatTrendValue(values[index], metadata.unit);
+      if (usageTrendType === 'usage') {
+        value.classList.add('trend-value-dual');
+        value.innerHTML = `${formatNumber(entry.value, 1)}h<br><span class="trend-value-sub">${formatNumber(entry.secondary, 1)}km</span>`;
+      } else {
+        value.textContent = formatTrendValue(values[index], metadata.unit);
+      }
       const wrap = document.createElement('div');
       wrap.className = 'trend-bar-wrap';
       const bar = document.createElement('div');
@@ -2253,7 +2283,7 @@
     const [year, month] = entries[0].date.split('-').map(Number);
     const firstWeekday = new Date(year, month - 1, 1).getDay();
     const today = localDateString();
-    $('usage-trend-title').textContent = `${year}년 ${month}월 일자별 ${metadata.metric}`;
+    $('usage-trend-title').textContent = usageTrendType === 'usage' ? `${year}년 ${month}월 일자별 운행시간·거리` : `${year}년 ${month}월 일자별 ${metadata.metric}`;
     $('trend-type').value = usageTrendType;
     renderTrendSummary(entries, metadata);
     container.classList.add('monthly');
@@ -2271,7 +2301,12 @@
       const item = document.createElement('div');
       item.className = `usage-calendar-day${entry.count ? ' has-usage' : ''}${entry.date === today ? ' today' : ''}`;
       const day = document.createElement('span'); day.className = 'usage-calendar-date'; day.textContent = String(index + 1);
-      const value = document.createElement('strong'); value.className = 'usage-calendar-hours'; value.textContent = entry.count ? formatTrendValue(entry.value, metadata.unit) : '-';
+      const value = document.createElement('strong'); value.className = 'usage-calendar-hours';
+      if (!entry.count) value.textContent = '-';
+      else if (usageTrendType === 'usage') {
+        value.classList.add('usage-calendar-dual');
+        value.innerHTML = `${formatNumber(entry.value, 1)}h<br><span>${formatNumber(entry.secondary, 1)}km</span>`;
+      } else value.textContent = formatTrendValue(entry.value, metadata.unit);
       item.append(day, value); return item;
     });
     container.replaceChildren(...weekdays, ...blanks, ...days);
@@ -2297,6 +2332,7 @@
 
   function loadHistoryTab() {
     renderDriverMetrics();
+    renderDriverRecordButtons();
     renderUsageTrend();
     const records = historyRecords();
     const container = $('history-list');

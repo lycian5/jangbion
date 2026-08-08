@@ -232,6 +232,11 @@
     .trend-col { height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:5px; min-width:0; }
     .trend-bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; }
     .trend-bar { width:70%; min-height:2px; background:linear-gradient(180deg,var(--primary-light),var(--primary)); border-radius:6px 6px 2px 2px; }
+    .trend-value-dual { font-size:.62rem; line-height:1.25; white-space:normal; }
+    .trend-value-sub { color:var(--sub); font-weight:700; }
+    .usage-calendar-dual { font-size:.62rem; line-height:1.25; font-weight:800; }
+    .usage-calendar-dual span { color:var(--sub); font-weight:700; }
+    .trend-summary { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
     .trend-value { font-size:.68rem; font-weight:700; color:var(--primary); }
     .trend-label { font-size:.68rem; color:var(--sub); }
     .trend-card-title { flex-wrap:wrap; }
@@ -869,10 +874,10 @@
         </div>
       </div>
       <div class="operation-button-stack home-quick-actions" style="margin-top:8px;">
-        <button class="btn operation-primary" type="button" onclick="switchTab('usage')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>사용·계기</span></button>
-        <button class="btn operation-primary" type="button" onclick="switchTab('work')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg><span>작업</span></button>
-        <button class="btn operation-primary" type="button" onclick="switchTab('fuel')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fuel"></use></svg><span>주유</span></button>
-        <button class="btn operation-primary" type="button" onclick="switchTab('maint')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wrench"></use></svg><span>정비</span></button>
+        <button class="btn operation-primary" id="records-usage-button" type="button" onclick="switchTab('usage')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-gauge"></use></svg><span>운행 기록 입력</span></button>
+        <button class="btn operation-primary" id="records-work-button" type="button" onclick="switchTab('work')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg><span>작업 기록 입력</span></button>
+        <button class="btn operation-primary" id="records-fuel-button" type="button" onclick="switchTab('fuel')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-fuel"></use></svg><span>주유 기록 입력</span></button>
+        <button class="btn operation-primary" id="records-maint-button" type="button" onclick="switchTab('maint')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wrench"></use></svg><span>정비 기록 입력</span></button>
       </div>
     </section>
     <div class="card">
@@ -1866,6 +1871,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.5.4"></script>
+<script src="./app.js?v=3.5.6"></script>
 </body>
 </html>
