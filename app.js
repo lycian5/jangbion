@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.4.0';
+  const APP_VERSION = '3.4.3';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
   const MAX_WORK_PHOTOS = 4;
@@ -1087,6 +1087,124 @@
     });
   }
 
+
+  const SERVICE_TRACK_TYPES = {
+    dpf: { type: 'DPF 후처리', label: 'DPF 후처리', unitHint: '운행시간·거리', home: true, record: true },
+    grease: { type: '구리스 주입', label: '구리스 주입', unitHint: '운행시간·거리', home: true, record: true },
+    engineOil: { type: '엔진오일 교환', label: '엔진오일', unitHint: '운행시간·거리', home: false, record: true },
+    missionOil: { type: '미션오일 교환', label: '미션오일', unitHint: '운행시간·거리', home: false, record: true },
+    hydraulicOil: { type: '대우오일 교환', label: '대우오일', unitHint: '운행시간·거리', home: false, record: true }
+  };
+  const SERVICE_HOME_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].home);
+  const SERVICE_RECORD_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].record);
+
+
+  function lastMaintByType(type, equipmentId = DB.currentEquipmentId) {
+    return logsForEquipment(DB.maintLogs, equipmentId)
+      .filter(item => item.type === type)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
+  }
+
+  function daysBetweenDates(fromDate, toDate) {
+    if (!isDateString(fromDate) || !isDateString(toDate)) return null;
+    const a = new Date(`${fromDate}T00:00:00`);
+    const b = new Date(`${toDate}T00:00:00`);
+    return Math.round((b - a) / 86400000);
+  }
+
+  /** 실시일 다음날~기준일까지 운행기록 시간·거리 합 */
+  function usageTotalsAfterDate(serviceDate, equipmentId = DB.currentEquipmentId, throughDate = localDateString()) {
+    const logs = logsForEquipment(DB.dailyLogs, equipmentId)
+      .filter(item => isDateString(item.date) && item.date > serviceDate && item.date <= throughDate)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    let hours = 0;
+    let km = 0;
+    let daysWithUsage = 0;
+    logs.forEach(item => {
+      const usage = computeEquipmentUsage(item.date, equipmentId);
+      if (usage.hours > 0 || usage.km > 0) daysWithUsage += 1;
+      hours += usage.hours;
+      km += usage.km;
+    });
+    return {
+      hours: +hours.toFixed(1),
+      km: +km.toFixed(1),
+      daysWithUsage,
+      logCount: logs.length
+    };
+  }
+
+  function buildServiceIntervalAlert(key, equipmentId = DB.currentEquipmentId, asOf = localDateString()) {
+    const conf = SERVICE_TRACK_TYPES[key];
+    if (!conf) return null;
+    const last = lastMaintByType(conf.type, equipmentId);
+    if (!last) {
+      return {
+        key,
+        level: 'none',
+        title: conf.label,
+        meta: '기록 없음',
+        detail: `정비 탭에서 「${conf.type}」 실시일을 남기면 D+n·운행합계를 표시합니다.`,
+        serviceDate: null,
+        dayOffset: null,
+        hours: 0,
+        km: 0
+      };
+    }
+    const dayOffset = daysBetweenDates(last.date, asOf);
+    const totals = usageTotalsAfterDate(last.date, equipmentId, asOf);
+    const dLabel = dayOffset == null ? '-' : dayOffset === 0 ? 'D+0 (당일)' : `D+${dayOffset}`;
+    let level = 'ok';
+    if (dayOffset != null && dayOffset >= 1 && dayOffset <= 7) level = 'warn';
+    if (dayOffset != null && dayOffset > 7) level = 'ok';
+    const meta = `${dLabel} · 운행 ${formatNumber(totals.hours, 1)}h · ${formatNumber(totals.km, 1)}km`;
+    const detail = `기준일 ${last.date} 이후 운행기록 합계 (실시 당일 제외). 운행 입력 ${totals.logCount}일`;
+    return {
+      key,
+      level,
+      title: conf.label,
+      meta,
+      detail,
+      serviceDate: last.date,
+      dayOffset,
+      hours: totals.hours,
+      km: totals.km
+    };
+  }
+
+  function renderServiceAlertList(container, keys) {
+    if (!container) return;
+    const asOf = selectedDate();
+    const alerts = keys.map(key => buildServiceIntervalAlert(key, DB.currentEquipmentId, asOf)).filter(Boolean);
+    container.replaceChildren(...alerts.map(alert => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `service-alert ${alert.level === 'warn' ? 'warn' : alert.level === 'none' ? '' : 'ok'}`;
+      btn.onclick = () => switchTab('maint');
+      const title = document.createElement('div');
+      title.className = 'service-alert-title';
+      title.textContent = alert.title;
+      const meta = document.createElement('div');
+      meta.className = 'service-alert-meta';
+      meta.textContent = alert.meta;
+      const detail = document.createElement('div');
+      detail.className = 'service-alert-detail';
+      detail.textContent = alert.detail;
+      btn.append(title, meta, detail);
+      return btn;
+    }));
+  }
+
+  function renderServiceIntervalAlerts() {
+    // 홈: DPF·구리스만
+    renderServiceAlertList($('service-interval-alerts'), SERVICE_HOME_KEYS);
+  }
+
+  function renderRecordServiceIntervalAlerts() {
+    // 기록(사용) 탭: DPF·구리스·오일류 전부
+    renderServiceAlertList($('record-service-interval-alerts'), SERVICE_RECORD_KEYS);
+  }
+
   function renderDriverStatusOverview() {
     const date = selectedDate();
     const equipmentId = DB.currentEquipmentId;
@@ -1116,6 +1234,32 @@
       $('driver-maint-status-value').textContent = '당일 기록 없음';
       $('driver-maint-status-detail').textContent = maintenanceDueText();
     }
+
+    // 홈 상태 필 (상태·빠른 실행 중심)
+    const statusDate = $('home-status-date');
+    if (statusDate) statusDate.textContent = date === localDateString() ? '오늘 기준' : `${date} 기준`;
+    const dayStatus = logsForEquipment(DB.dayStatuses, equipmentId).find(item => item.date === date);
+    const hasUsage = Boolean(dayStatus) || logsForEquipment(DB.dailyLogs, equipmentId).some(item => item.date === date);
+    const hasWork = Boolean(dayStatus) || logsForEquipment(DB.workLogs, equipmentId).some(item => item.date === date);
+    const setPill = (id, done, labelDone, labelMissing, optional = false) => {
+      const el = $(id);
+      if (!el) return;
+      el.classList.remove('is-done', 'is-missing', 'is-optional');
+      if (optional && !done) {
+        el.classList.add('is-optional');
+        el.textContent = labelMissing;
+      } else if (done) {
+        el.classList.add('is-done');
+        el.textContent = labelDone;
+      } else {
+        el.classList.add('is-missing');
+        el.textContent = labelMissing;
+      }
+    };
+    setPill('home-status-usage', hasUsage, '사용 · 기록됨', '사용 · 미입력');
+    setPill('home-status-work', hasWork, '작업 · 기록됨', '작업 · 미입력');
+    setPill('home-status-fuel', fuels.length > 0, `주유 · ${fuels.length}건`, '주유 · 없음', true);
+    setPill('home-status-maint', maintenances.length > 0, `정비 · ${maintenances.length}건`, '정비 · 없음', true);
   }
 
   function recentActivities() {
@@ -1171,6 +1315,7 @@
     operationButton.replaceChildren(svgIcon(state.action === 'fault' ? 'alert' : state.action === 'equipment' ? 'settings' : 'gauge'), document.createTextNode(state.button));
     renderDriverMetrics();
     renderDriverStatusOverview();
+    renderServiceIntervalAlerts();
     renderDriverRecordButtons();
     syncFuelQuickUI();
     renderSubmissionCard();
@@ -1303,6 +1448,8 @@
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
     renderDayStatusControls();
     updateUsagePreview();
+    renderDriverMetrics();
+    renderRecordServiceIntervalAlerts();
   }
 
   function renderDayStatusControls() {

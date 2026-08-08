@@ -1,8 +1,8 @@
-const CACHE = 'jangbion-driver-v20';
+const CACHE = 'jangbion-driver-v23';
 const PRECACHE = [
   '/',
   '/index.html',
-  '/app.js?v=3.4.0',
+  '/app.js?v=3.4.3',
   '/manifest.json',
   '/static/icon.svg',
   '/static/icons/icon-192.png',
