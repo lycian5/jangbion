@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.1';
+  const APP_VERSION = '3.5.2';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -1185,12 +1185,13 @@
   }
 
   function renderDriverMetrics() {
-    const container = $('driver-metrics');
-    if (!container) return;
     const date = selectedDate();
-    const dateEl = $('driver-metric-date');
-    if (dateEl) dateEl.textContent = date === localDateString() ? '오늘 기준' : `${date} 기준`;
-    container.replaceChildren(...metricDefinitions(currentEquipment(), date).map(metric => {
+    const dateLabel = date === localDateString() ? '오늘 기준' : `${date} 기준`;
+    ['driver-metric-date', 'driver-metric-date-records'].forEach(id => {
+      const el = $(id);
+      if (el) el.textContent = dateLabel;
+    });
+    const cards = metricDefinitions(currentEquipment(), date).map(metric => {
       const card = document.createElement('div');
       card.className = 'submission-check';
       const label = document.createElement('div');
@@ -1201,7 +1202,12 @@
       value.textContent = metric.value;
       card.append(label, value);
       return card;
-    }));
+    });
+    ['driver-metrics', 'driver-metrics-records'].forEach(id => {
+      const container = $(id);
+      if (!container) return;
+      container.replaceChildren(...cards.map(node => node.cloneNode(true)));
+    });
   }
 
   function renderDriverRecordButtons() {
@@ -2203,6 +2209,7 @@
   }
 
   function loadHistoryTab() {
+    renderDriverMetrics();
     renderUsageTrend();
     const records = historyRecords();
     const container = $('history-list');

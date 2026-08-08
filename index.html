@@ -863,6 +863,16 @@
 
   <!-- 이력 탭 (하단 기록) -->
   <div class="tab-panel" id="tab-trend">
+    <section class="driver-card secondary-card record-metrics-card">
+      <div class="submission-head">
+        <div>
+          <div class="submission-title">오늘 실적</div>
+          <div class="submission-description">선택한 날짜 기준 운행·작업·주유·정비 요약입니다.</div>
+        </div>
+        <span class="hint" id="driver-metric-date-records">오늘 기준</span>
+      </div>
+      <div class="submission-checklist metrics-checklist" id="driver-metrics-records"></div>
+    </section>
     <section class="driver-card secondary-card">
       <div class="submission-head">
         <div>
@@ -1862,6 +1872,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.5.1"></script>
+<script src="./app.js?v=3.5.2"></script>
 </body>
 </html>
