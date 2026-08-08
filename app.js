@@ -4,8 +4,10 @@
   const STORAGE_KEY = 'forklift_log_data';
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const DB_VERSION = 6;
+  const APP_VERSION = '3.3.0';
   const MAX_WORK_PHOTOS = 4;
   const APPROX_STORAGE_LIMIT = 5 * 1024 * 1024;
+  const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
   const $ = id => document.getElementById(id);
@@ -179,12 +181,15 @@
   let currentFaultPhoto = null;
   let currentMaintenancePhoto = null;
   let usageTrendRange = 'week';
+  let usageTrendType = 'usage';
   let photoSourceInputId = null;
   let toastTimer = null;
   let currentMode = 'record';
   let freePlanGuideSource = 'details';
   let deferredInstallPrompt = null;
   let installCompleted = false;
+  let serviceWorkerRegistration = null;
+  let applyingAppUpdate = false;
   const INSTALL_HANDOFF_PARAM = 'install';
   const INSTALL_HANDOFF_SOURCE_PARAM = 'from';
   const KAKAO_HANDOFF_GUARD = 'jangbion:kakao-chrome-handoff';
@@ -1059,8 +1064,7 @@
     });
     if (saved) {
       showToast('사용 기록을 저장했습니다.');
-      loadUsageTab();
-      loadSummary();
+      navigateBottom('home');
     }
   }
 
@@ -1172,8 +1176,7 @@
       const count = equipmentLogs(DB.workLogs).filter(item => item.date === date).length;
       editingWorkId = null;
       showToast(`작업 기록을 저장했습니다. 오늘 ${count}건입니다.`);
-      loadWorkTab();
-      loadSummary();
+      navigateBottom('home');
     }
   }
 
@@ -1249,7 +1252,7 @@
       showPhotoPreview('fuel-receipt-preview', 'fuel-receipt-img', null);
       updateFuelPreview();
       showToast('주유 기록을 저장했습니다.');
-      loadSummary();
+      navigateBottom('home');
     }
   }
 
@@ -1275,28 +1278,80 @@
       currentMaintenancePhoto = null;
       showPhotoPreview('maint-photo-preview', 'maint-photo-img', null);
       showToast('정비 기록을 저장했습니다.');
+      navigateBottom('home');
     }
+  }
+
+  const trendMetadata = {
+    usage: { metric: '운행시간', unit: 'h' },
+    work: { metric: '작업시간', unit: 'h' },
+    fuel: { metric: '주유량', unit: 'L' },
+    maint: { metric: '정비비', unit: '원' }
+  };
+
+  function trendDates() {
+    const anchor = new Date(`${selectedDate()}T00:00:00`);
+    if (usageTrendRange === 'month') {
+      const days = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+      return Array.from({ length: days }, (_, index) => `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`);
+    }
+    return Array.from({ length: 7 }, (_, index) => shiftDate(selectedDate(), index - 6));
+  }
+
+  function trendValuesForDate(type, date) {
+    if (type === 'usage') {
+      const usage = computeDailyUsage(date);
+      return { value: usage.hours, count: equipmentLogs(DB.dailyLogs).filter(item => item.date === date).length };
+    }
+    const records = equipmentLogs(type === 'work' ? DB.workLogs : type === 'fuel' ? DB.fuelLogs : DB.maintLogs).filter(item => item.date === date);
+    if (type === 'work') return { value: records.reduce((total, item) => total + numberOr(item.hours), 0), count: records.length };
+    if (type === 'fuel') return { value: records.reduce((total, item) => total + numberOr(item.liters), 0), count: records.length };
+    return { value: records.reduce((total, item) => total + numberOr(item.cost), 0), count: records.length };
+  }
+
+  function formatTrendValue(value, unit) {
+    return unit === '원' ? `${formatNumber(Math.round(value))}원` : `${formatNumber(value, 1)}${unit}`;
+  }
+
+  function renderTrendSummary(entries, metadata) {
+    const summary = $('trend-summary');
+    if (usageTrendType !== 'usage' && usageTrendType !== 'work') {
+      summary.classList.add('hidden');
+      summary.replaceChildren();
+      return;
+    }
+    const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+    const average = total / entries.length;
+    const periodLabel = usageTrendRange === 'month' ? `${entries.length}일 기준` : '7일 기준';
+    const createItem = (label, value) => {
+      const item = document.createElement('div'); item.className = 'trend-summary-item';
+      const title = document.createElement('span'); title.textContent = label;
+      const amount = document.createElement('strong'); amount.textContent = value;
+      item.append(title, amount); return item;
+    };
+    summary.replaceChildren(
+      createItem(`${metadata.metric} 합계`, formatTrendValue(total, metadata.unit)),
+      createItem(`일평균 (${periodLabel})`, formatTrendValue(average, metadata.unit))
+    );
+    summary.classList.remove('hidden');
   }
 
   function renderUsageTrend() {
     const isMonthly = usageTrendRange === 'month';
-    const anchor = new Date(`${selectedDate()}T00:00:00`);
+    const metadata = trendMetadata[usageTrendType];
+    const entries = trendDates().map(date => {
+      const trend = trendValuesForDate(usageTrendType, date);
+      return { date, label: isMonthly ? `${Number(date.slice(-2))}일` : date.slice(5).replace('-', '/'), ...trend };
+    });
     if (isMonthly) {
-      renderUsageCalendar(anchor);
+      renderUsageCalendar(entries, metadata);
       return;
     }
-    const entries = isMonthly
-      ? Array.from({ length: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate() }, (_, index) => {
-          const date = `${anchor.getFullYear()}-${String(anchor.getMonth() + 1).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
-          return { label: `${index + 1}일`, hours: computeDailyUsage(date).hours };
-        })
-      : Array.from({ length: 7 }, (_, index) => {
-          const date = shiftDate(selectedDate(), index - 6);
-          return { label: date.slice(5).replace('-', '/'), hours: computeDailyUsage(date).hours };
-        });
-    const values = entries.map(item => item.hours);
+    const values = entries.map(item => item.value);
     const maximum = Math.max(...values, 1);
-    $('usage-trend-title').textContent = '최근 7일 사용시간';
+    $('usage-trend-title').textContent = `최근 7일 ${metadata.metric}`;
+    $('trend-type').value = usageTrendType;
+    renderTrendSummary(entries, metadata);
     $('usage-trend').classList.remove('monthly');
     $('usage-trend').parentElement.classList.remove('monthly');
     $('trend-range-week').classList.toggle('active', !isMonthly);
@@ -1306,7 +1361,7 @@
       column.className = 'trend-col';
       const value = document.createElement('div');
       value.className = 'trend-value';
-      value.textContent = values[index].toFixed(1);
+      value.textContent = formatTrendValue(values[index], metadata.unit);
       const wrap = document.createElement('div');
       wrap.className = 'trend-bar-wrap';
       const bar = document.createElement('div');
@@ -1321,14 +1376,14 @@
     }));
   }
 
-  function renderUsageCalendar(anchor) {
+  function renderUsageCalendar(entries, metadata) {
     const container = $('usage-trend');
-    const year = anchor.getFullYear();
-    const month = anchor.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstWeekday = new Date(year, month, 1).getDay();
+    const [year, month] = entries[0].date.split('-').map(Number);
+    const firstWeekday = new Date(year, month - 1, 1).getDay();
     const today = localDateString();
-    $('usage-trend-title').textContent = `${year}년 ${month + 1}월 일자별 사용시간`;
+    $('usage-trend-title').textContent = `${year}년 ${month}월 일자별 ${metadata.metric}`;
+    $('trend-type').value = usageTrendType;
+    renderTrendSummary(entries, metadata);
     container.classList.add('monthly');
     container.parentElement.classList.add('monthly');
     $('trend-range-week').classList.remove('active');
@@ -1340,13 +1395,11 @@
     const blanks = Array.from({ length: firstWeekday }, () => {
       const item = document.createElement('div'); item.className = 'usage-calendar-day empty'; return item;
     });
-    const days = Array.from({ length: daysInMonth }, (_, index) => {
-      const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
-      const hours = computeDailyUsage(date).hours;
+    const days = entries.map((entry, index) => {
       const item = document.createElement('div');
-      item.className = `usage-calendar-day${hours > 0 ? ' has-usage' : ''}${date === today ? ' today' : ''}`;
+      item.className = `usage-calendar-day${entry.count ? ' has-usage' : ''}${entry.date === today ? ' today' : ''}`;
       const day = document.createElement('span'); day.className = 'usage-calendar-date'; day.textContent = String(index + 1);
-      const value = document.createElement('strong'); value.className = 'usage-calendar-hours'; value.textContent = `${hours.toFixed(1)}h`;
+      const value = document.createElement('strong'); value.className = 'usage-calendar-hours'; value.textContent = entry.count ? formatTrendValue(entry.value, metadata.unit) : '-';
       item.append(day, value); return item;
     });
     container.replaceChildren(...weekdays, ...blanks, ...days);
@@ -2102,6 +2155,62 @@
     navigator.clipboard.writeText(url).then(() => showToast('주소를 복사했습니다.')).catch(() => showToast(`주소: ${url}`));
   }
 
+  function showAppUpdateNotice() {
+    $('app-update-banner')?.classList.add('show');
+    $('update-check-status').textContent = '새 버전이 준비되었습니다. 저장 후 “새 버전 적용”을 눌러주세요.';
+  }
+
+  function setUpdateCheckStatus(message) {
+    $('update-check-status').textContent = message;
+  }
+
+  async function checkForAppUpdate(manual = false) {
+    if (!serviceWorkerRegistration) return;
+    if (manual) setUpdateCheckStatus('최신 버전을 확인하고 있습니다.');
+    try {
+      await serviceWorkerRegistration.update();
+      if (serviceWorkerRegistration.waiting) {
+        showAppUpdateNotice();
+      } else if (manual) {
+        setUpdateCheckStatus(`현재 v${APP_VERSION}이 최신 버전입니다.`);
+      }
+    } catch (error) {
+      if (manual) setUpdateCheckStatus('업데이트를 확인하지 못했습니다. 인터넷 연결을 확인해주세요.');
+      console.warn('업데이트 확인 실패', error);
+    }
+  }
+
+  function applyAppUpdate() {
+    const waitingWorker = serviceWorkerRegistration?.waiting;
+    if (!waitingWorker) return window.location.reload();
+    applyingAppUpdate = true;
+    setUpdateCheckStatus('새 버전을 적용하고 있습니다.');
+    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (applyingAppUpdate) return window.location.reload();
+      if (hadController) showAppUpdateNotice();
+    });
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        serviceWorkerRegistration = registration;
+        if (registration.waiting) showAppUpdateNotice();
+        registration.addEventListener('updatefound', () => {
+          const worker = registration.installing;
+          worker?.addEventListener('statechange', () => {
+            if (worker.state === 'installed' && navigator.serviceWorker.controller) showAppUpdateNotice();
+          });
+        });
+        checkForAppUpdate();
+        window.setInterval(checkForAppUpdate, UPDATE_CHECK_INTERVAL);
+      })
+      .catch(error => console.warn('서비스워커 등록 실패', error));
+  }
+
   function bindEvents() {
     const resetLegacyControl = id => {
       const original = $(id);
@@ -2173,13 +2282,17 @@
     $('btn-save-maint').addEventListener('click', saveMaintenance);
     $('trend-range-week').addEventListener('click', () => { usageTrendRange = 'week'; renderUsageTrend(); });
     $('trend-range-month').addEventListener('click', () => { usageTrendRange = 'month'; renderUsageTrend(); });
+    $('trend-type').addEventListener('change', event => { usageTrendType = event.target.value; renderUsageTrend(); });
+    $('btn-apply-update').addEventListener('click', applyAppUpdate);
+    $('btn-check-update').addEventListener('click', () => checkForAppUpdate(true));
     $('history-type').addEventListener('change', loadHistoryTab);
     $('history-month').addEventListener('change', loadHistoryTab);
     $('admin-history-equipment').addEventListener('change', renderAdminHistory);
     $('admin-history-type').addEventListener('change', renderAdminHistory);
     $('admin-history-month').addEventListener('change', renderAdminHistory);
-    window.addEventListener('online', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
+    window.addEventListener('online', () => { updateOnlineStatus(); checkForAppUpdate(); if (currentMode === 'record') loadSummary(); });
     window.addEventListener('offline', () => { updateOnlineStatus(); if (currentMode === 'record') loadSummary(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForAppUpdate(); });
     document.querySelectorAll('.modal-overlay').forEach(modal => modal.addEventListener('click', event => {
       if (event.target === modal) modal.classList.add('hidden');
     }));
@@ -2199,11 +2312,12 @@
     loadSummary();
     updatePlanSummary();
     updateStorageMeter();
+    $('app-version').textContent = `v${APP_VERSION}`;
     handleInstallHandoff();
     if (!localStorage.getItem(PLAN_NOTICE_KEY) && !isInstallHandoffEntry() && !isAndroidKakaoBrowser()) {
       setTimeout(() => openFreePlanGuide('welcome'), 350);
     }
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(error => console.warn('서비스워커 등록 실패', error));
+    registerServiceWorker();
   }
 
   Object.assign(window, {
