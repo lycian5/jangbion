@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.2';
+  const APP_VERSION = '3.5.3';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -1227,14 +1227,15 @@
 
 
   const SERVICE_TRACK_TYPES = {
-    dpf: { type: 'DPF 후처리', label: 'DPF 후처리', unitHint: '운행시간·거리', home: true, record: true },
-    grease: { type: '구리스 주입', label: '구리스 주입', unitHint: '운행시간·거리', home: true, record: true },
-    engineOil: { type: '엔진오일 교환', label: '엔진오일', unitHint: '운행시간·거리', home: false, record: true },
-    missionOil: { type: '미션오일 교환', label: '미션오일', unitHint: '운행시간·거리', home: false, record: true },
-    hydraulicOil: { type: '대우오일 교환', label: '대우오일', unitHint: '운행시간·거리', home: false, record: true }
+    dpf: { type: 'DPF 후처리', label: 'DPF 후처리', unitHint: '운행시간·거리', home: true, record: true, alert: true },
+    grease: { type: '구리스 주입', label: '구리스 주입', unitHint: '운행시간·거리', home: true, record: true, alert: true },
+    engineOil: { type: '엔진오일 교환', label: '엔진오일', unitHint: '운행시간·거리', home: false, record: true, alert: true },
+    missionOil: { type: '미션오일 교환', label: '미션오일', unitHint: '운행시간·거리', home: false, record: true, alert: true },
+    hydraulicOil: { type: '대우오일 교환', label: '대우오일', unitHint: '운행시간·거리', home: false, record: true, alert: true }
   };
   const SERVICE_HOME_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].home);
   const SERVICE_RECORD_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].record);
+  const SERVICE_ALERT_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].alert);
 
 
   function lastMaintByType(type, equipmentId = DB.currentEquipmentId) {
@@ -1320,7 +1321,10 @@
       btn.type = 'button';
       const levelClass = alert.level === 'warn' ? 'warn' : alert.level === 'none' ? 'none' : 'ok';
       btn.className = `service-alert ${levelClass}`;
-      btn.onclick = () => switchTab('maint');
+      btn.onclick = () => {
+        switchTab('usage');
+        setTimeout(() => $('record-service-interval-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+      };
       const title = document.createElement('div');
       title.className = 'service-alert-title';
       title.textContent = alert.title;
@@ -1373,10 +1377,10 @@
         });
       }
     }
-    SERVICE_HOME_KEYS.forEach(key => {
+    SERVICE_ALERT_KEYS.forEach(key => {
       const alert = buildServiceIntervalAlert(key);
       if (!alert) return;
-      // 알림 허브: 주의(D+1~7) 또는 기록 없음 표시. ok도 요약으로 표시
+      // 알림: DPF·구리스·엔진/미션/대우 오일 주기 표시 (입력 폼이 아님)
       const show = alert.level === 'warn' || alert.level === 'none' || alert.level === 'ok';
       if (!show) return;
       items.push({
@@ -1385,7 +1389,14 @@
         title: `정비 주기 · ${alert.title}`,
         meta: alert.meta,
         detail: alert.detail,
-        action: () => { closeAlertsHub(); switchTab('maint'); }
+        action: () => {
+          closeAlertsHub();
+          switchTab('usage');
+          setTimeout(() => {
+            const el = $('record-service-interval-alerts');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 120);
+        }
       });
     });
     const fault = typeof blockingFault === 'function' ? blockingFault() : null;
