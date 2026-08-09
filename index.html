@@ -87,7 +87,11 @@
     .doc-actions button {
       border:1px solid var(--border); background:#fff; border-radius:8px;
       padding:6px 8px; font-size:.7rem; font-weight:800; cursor:pointer; color:var(--text);
+      position:relative; z-index:2; pointer-events:auto;
     }
+    .doc-check { position:relative; z-index:2; pointer-events:auto; }
+    #equipment-docs-section, #equipment-docs-list { position:relative; z-index:1; }
+
     body { font-family:Pretendard,'Noto Sans KR',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding-bottom:96px; }
     .font-size-section { margin:14px 0 12px; padding:14px; border:1px solid var(--border); border-radius:14px; background:#f8fafc; }
     .font-size-list { display:flex; flex-direction:column; gap:4px; }
@@ -219,6 +223,9 @@
     .photo-thumb button { position:absolute; top:4px; right:4px; background:rgba(0,0,0,.6); color:#fff; border:none; border-radius:50%; width:22px; height:22px; font-size:12px; line-height:1; cursor:pointer; }
 
     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:200; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .modal-overlay.elevated { z-index:280; }
+    .modal-card { max-height:min(90vh, 720px); overflow-y:auto; -webkit-overflow-scrolling:touch; }
+
     .modal-overlay.hidden { display:none; }
     .hidden { display:none !important; }
     .modal-card { background:#fff; border-radius:var(--radius); padding:24px; width:100%; max-width:420px; max-height:90vh; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
@@ -1119,16 +1126,6 @@
 </div>
 
 <!-- 사진 출처 선택 -->
-<div id="photo-source-modal" class="modal-overlay hidden">
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="photo-source-title">
-    <div class="card-title" id="photo-source-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-camera"></use></svg>사진 추가</div>
-    <p class="modal-hint">사진을 가져올 방법을 선택하세요.</p>
-    <button class="btn btn-primary" type="button" onclick="choosePhotoSource('camera')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>카메라 촬영</button>
-    <button class="btn btn-fuel" type="button" onclick="choosePhotoSource('album')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>앨범에서 선택</button>
-    <button class="btn btn-plain" type="button" onclick="closePhotoSourcePicker()">취소</button>
-  </div>
-</div>
-
 <!-- 장비 관리 (장비 탭 전용) -->
 <div id="settings-modal" class="modal-overlay hidden">
   <div class="modal-card">
@@ -1180,6 +1177,11 @@
       </div>
     </div>
 
+    <div class="service-interval-card" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+      <div class="submission-title" style="margin-bottom:4px;">정비 주기</div>
+      <p class="hint" style="margin-bottom:8px;">DPF·구리스·엔진/미션/대우 오일 · 실시일 이후 운행 합계</p>
+      <div id="equipment-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
+    </div>
     <div class="equipment-docs" id="equipment-docs-section">
       <div class="equipment-docs-head">
         <div>
@@ -1195,14 +1197,20 @@
       </div>
     </div>
 
-    <div class="service-interval-card" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
-      <div class="submission-title" style="margin-bottom:4px;">정비 주기</div>
-      <p class="hint" style="margin-bottom:8px;">DPF·구리스·엔진/미션/대우 오일 · 실시일 이후 운행 합계</p>
-      <div id="equipment-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
-    </div>
     <button class="btn btn-plain" onclick="closeSettings()">닫기</button>
   </div>
 </div>
+
+<div id="photo-source-modal" class="modal-overlay elevated hidden">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="photo-source-title">
+    <div class="card-title" id="photo-source-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-camera"></use></svg>사진 추가</div>
+    <p class="modal-hint">사진을 가져올 방법을 선택하세요.</p>
+    <button class="btn btn-primary" type="button" onclick="choosePhotoSource('camera')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>카메라 촬영</button>
+    <button class="btn btn-fuel" type="button" onclick="choosePhotoSource('album')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>앨범에서 선택</button>
+    <button class="btn btn-plain" type="button" onclick="closePhotoSourcePicker()">취소</button>
+  </div>
+</div>
+
 
 <!-- 데이터·표시·앱 설정 (더보기) -->
 <div id="data-settings-modal" class="modal-overlay hidden">
@@ -1936,6 +1944,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.6.0"></script>
+<script src="./app.js?v=3.6.1"></script>
 </body>
 </html>

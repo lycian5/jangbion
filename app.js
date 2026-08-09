@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.0';
+  const APP_VERSION = '3.6.1';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -1718,20 +1718,29 @@
   function closeAlertComingSoon() { closeAlertsHub(); }
   function openPhotoSourcePicker(inputId) {
     photoSourceInputId = inputId;
-    $('photo-source-modal').classList.remove('hidden');
+    const modal = $('photo-source-modal');
+    if (modal) {
+      modal.classList.add('elevated');
+      modal.classList.remove('hidden');
+    }
   }
   function closePhotoSourcePicker() {
     photoSourceInputId = null;
-    $('photo-source-modal').classList.add('hidden');
+    const modal = $('photo-source-modal');
+    if (modal) modal.classList.add('hidden');
   }
+
   function choosePhotoSource(source) {
-    const input = photoSourceInputId ? $(photoSourceInputId) : null;
+    const inputId = photoSourceInputId;
+    const input = inputId ? $(inputId) : null;
     if (!input) return closePhotoSourcePicker();
     if (source === 'camera') input.setAttribute('capture', 'environment');
     else input.removeAttribute('capture');
-    $('photo-source-modal').classList.add('hidden');
-    photoSourceInputId = null;
-    input.click();
+    closePhotoSourcePicker();
+    // 장비 모달 위에 떠 있던 피커를 닫은 뒤 파일 선택을 연다
+    setTimeout(() => {
+      try { input.click(); } catch (error) { showToast('사진 선택을 열지 못했습니다.'); }
+    }, 50);
   }
 
   function navigateBottom(target) {
@@ -2746,7 +2755,9 @@
       const attach = document.createElement('button');
       attach.type = 'button';
       attach.textContent = existing?.photo ? '교체' : '첨부';
-      attach.addEventListener('click', () => {
+      attach.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         pendingEquipmentDocType = def.id;
         openPhotoSourcePicker('inp-equipment-doc');
       });
@@ -3570,7 +3581,7 @@
     $('btn-save-work').addEventListener('click', saveWork);
     $('btn-new-work').addEventListener('click', startNewWorkRecord);
     $('btn-new-maint')?.addEventListener('click', startNewMaintRecord);
-    $('btn-share-equipment-docs')?.addEventListener('click', () => shareSelectedEquipmentDocs());
+    $('btn-share-equipment-docs')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); shareSelectedEquipmentDocs(); });
     $('btn-clear-doc-selection')?.addEventListener('click', clearEquipmentDocSelection);
     $('inp-equipment-doc')?.addEventListener('change', async event => {
       const file = event.target.files?.[0];
