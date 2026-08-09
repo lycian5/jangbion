@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.5.6';
+  const APP_VERSION = '3.6.0';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 7;
@@ -114,7 +114,7 @@
   }
 
   function collectionKeys() {
-    return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports'];
+    return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports', 'equipmentDocs'];
   }
 
   function walkPhotoFields(db, visitor) {
@@ -133,6 +133,7 @@
     (db.maintLogs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
     (db.inspections || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
     (db.faultReports || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+    (db.equipmentDocs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
   }
 
   function isPhotoRef(value) {
@@ -515,6 +516,21 @@
     }));
   }
 
+
+  function normalizeEquipmentDocs(docs, equipmentId) {
+    return (Array.isArray(docs) ? docs : [])
+      .map(item => ({
+        id: String(item.id || uid('edoc')),
+        equipmentId: String(item.equipmentId || equipmentId || ''),
+        docType: String(item.docType || 'other'),
+        label: String(item.label || item.docType || '서류'),
+        photo: String(item.photo || ''),
+        updatedAt: String(item.updatedAt || item.createdAt || new Date().toISOString()),
+        createdAt: String(item.createdAt || new Date().toISOString())
+      }))
+      .filter(item => item.equipmentId && item.docType);
+  }
+
   function migrateDatabase(source) {
     const raw = source && typeof source === 'object' ? source : {};
     let equipments = Array.isArray(raw.equipments) ? raw.equipments.map(normalizeEquipment) : [];
@@ -534,7 +550,8 @@
       submissions: normalizeSubmissions(raw.submissions, currentEquipmentId),
       operationSessions: normalizeOperations(raw.operationSessions, currentEquipmentId),
       inspections: normalizeInspections(raw.inspections, currentEquipmentId),
-      faultReports: normalizeFaultReports(raw.faultReports, currentEquipmentId)
+      faultReports: normalizeFaultReports(raw.faultReports, currentEquipmentId),
+      equipmentDocs: normalizeEquipmentDocs(raw.equipmentDocs, currentEquipmentId)
     };
   }
 
@@ -2658,6 +2675,213 @@
     }));
   }
 
+
+  const EQUIPMENT_DOC_TYPES = [
+    { id: 'biz_reg', label: '사업자등록증' },
+    { id: 'machine_reg_front', label: '건설기계등록증 (앞)' },
+    { id: 'machine_reg_back', label: '건설기계등록증 (뒤)' },
+    { id: 'insurance', label: '보험증권' },
+    { id: 'operator_license', label: '건설기계조종사면허증' },
+    { id: 'basic_safety_cert', label: '건설업 기초안전보건교육 이수증' },
+    { id: 'operator_safety_cert', label: '건설기계조종사 안전교육 이수증' },
+    { id: 'special_worker_edu', label: '특수형태근로종사자 교육실시확인서' },
+    { id: 'biz_account', label: '사업자계좌번호' },
+    { id: 'manage_contract', label: '건설기계관리계약서' },
+    { id: 'machine_spec', label: '건설기계재원표' },
+    { id: 'other', label: '기타' }
+  ];
+
+  let pendingEquipmentDocType = null;
+  const selectedEquipmentDocTypes = new Set();
+  const SPONSOR_BANNER_KEY = 'jangbion_sponsor_banner_hidden_v1';
+
+  function equipmentDocsForCurrent() {
+    return (DB.equipmentDocs || []).filter(item => item.equipmentId === DB.currentEquipmentId);
+  }
+
+  function findEquipmentDoc(docType) {
+    return equipmentDocsForCurrent().find(item => item.docType === docType) || null;
+  }
+
+  function renderEquipmentDocs() {
+    const list = $('equipment-docs-list');
+    if (!list) return;
+    list.replaceChildren(...EQUIPMENT_DOC_TYPES.map(def => {
+      const existing = findEquipmentDoc(def.id);
+      const row = document.createElement('div');
+      row.className = 'doc-row';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'doc-check';
+      check.disabled = !existing?.photo;
+      check.checked = selectedEquipmentDocTypes.has(def.id) && Boolean(existing?.photo);
+      check.addEventListener('change', () => {
+        if (check.checked) selectedEquipmentDocTypes.add(def.id);
+        else selectedEquipmentDocTypes.delete(def.id);
+      });
+      let thumb;
+      if (existing?.photo) {
+        thumb = document.createElement('img');
+        thumb.className = 'doc-thumb';
+        thumb.src = existing.photo;
+        thumb.alt = def.label;
+      } else {
+        thumb = document.createElement('div');
+        thumb.className = 'doc-thumb placeholder';
+        thumb.textContent = '없음';
+      }
+      const meta = document.createElement('div');
+      meta.className = 'doc-meta';
+      const name = document.createElement('div');
+      name.className = 'doc-name';
+      name.textContent = def.label;
+      const status = document.createElement('div');
+      status.className = 'doc-status';
+      status.textContent = existing?.photo
+        ? `등록됨 · ${(existing.updatedAt || '').slice(0, 10)}`
+        : '미등록';
+      meta.append(name, status);
+      const actions = document.createElement('div');
+      actions.className = 'doc-actions';
+      const attach = document.createElement('button');
+      attach.type = 'button';
+      attach.textContent = existing?.photo ? '교체' : '첨부';
+      attach.addEventListener('click', () => {
+        pendingEquipmentDocType = def.id;
+        openPhotoSourcePicker('inp-equipment-doc');
+      });
+      actions.append(attach);
+      if (existing?.photo) {
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = '삭제';
+        remove.addEventListener('click', () => removeEquipmentDoc(def.id));
+        actions.append(remove);
+      }
+      row.append(check, thumb, meta, actions);
+      return row;
+    }));
+  }
+
+  function removeEquipmentDoc(docType) {
+    if (!confirm('이 서류를 삭제할까요?')) return;
+    if (commit(next => {
+      next.equipmentDocs = (next.equipmentDocs || []).filter(
+        item => !(item.equipmentId === DB.currentEquipmentId && item.docType === docType)
+      );
+    })) {
+      selectedEquipmentDocTypes.delete(docType);
+      renderEquipmentDocs();
+      showToast('서류를 삭제했습니다.');
+    }
+  }
+
+  async function saveEquipmentDocFromFile(file) {
+    if (!pendingEquipmentDocType || !file) return;
+    const docType = pendingEquipmentDocType;
+    pendingEquipmentDocType = null;
+    try {
+      const photo = await compressImage(file);
+      const def = EQUIPMENT_DOC_TYPES.find(item => item.id === docType);
+      const existing = findEquipmentDoc(docType);
+      const record = {
+        id: existing?.id || uid('edoc'),
+        equipmentId: DB.currentEquipmentId,
+        docType,
+        label: def?.label || docType,
+        photo,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      if (commit(next => {
+        next.equipmentDocs = next.equipmentDocs || [];
+        const idx = next.equipmentDocs.findIndex(
+          item => item.equipmentId === record.equipmentId && item.docType === docType
+        );
+        if (idx >= 0) next.equipmentDocs[idx] = record;
+        else next.equipmentDocs.push(record);
+      })) {
+        renderEquipmentDocs();
+        showToast(`${record.label}을(를) 저장했습니다.`);
+      }
+    } catch (error) {
+      showToast(error.message || '서류 이미지를 저장하지 못했습니다.');
+    }
+  }
+
+  async function shareSelectedEquipmentDocs() {
+    const types = [...selectedEquipmentDocTypes];
+    if (!types.length) {
+      showToast('공유할 서류를 선택해주세요.');
+      return;
+    }
+    const docs = types.map(findEquipmentDoc).filter(item => item?.photo);
+    if (!docs.length) {
+      showToast('선택한 서류에 이미지가 없습니다.');
+      return;
+    }
+    try {
+      const files = [];
+      for (const doc of docs) {
+        const blob = await blobFromDisplayValue(doc.photo);
+        if (!blob) continue;
+        const safe = (doc.label || doc.docType || 'doc').replace(/[\\/:*?"<>|]/g, '_');
+        files.push(new File([blob], `${safe}.jpg`, { type: blob.type || 'image/jpeg' }));
+      }
+      if (!files.length) {
+        showToast('공유할 파일을 만들지 못했습니다.');
+        return;
+      }
+      if (navigator.share && navigator.canShare?.({ files })) {
+        await navigator.share({
+          title: '장비온 구비 서류',
+          text: '현장 구비 서류입니다.',
+          files
+        });
+        showToast('공유 화면을 열었습니다. 문자·카톡 등을 선택하세요.');
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({ title: '장비온 구비 서류', text: `구비 서류 ${files.length}건. 이미지 첨부는 기기에서 지원할 때 가능합니다.` });
+        showToast('텍스트만 공유되었습니다. 이미지는 교체·미리보기 후 저장해 첨부하세요.');
+        return;
+      }
+      // fallback: download first file
+      const url = URL.createObjectURL(files[0]);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = files[0].name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      showToast('파일을 저장했습니다. 문자·카톡에서 첨부해 보내세요.');
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+      showToast('공유에 실패했습니다. 다시 시도해주세요.');
+    }
+  }
+
+  function clearEquipmentDocSelection() {
+    selectedEquipmentDocTypes.clear();
+    renderEquipmentDocs();
+  }
+
+  function isSponsorBannerHidden() {
+    try { return sessionStorage.getItem(SPONSOR_BANNER_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function renderSponsorBanner() {
+    const banner = $('sponsor-banner');
+    if (!banner) return;
+    const hide = isSponsorBannerHidden();
+    banner.classList.toggle('hidden', hide);
+    document.body.classList.toggle('has-sponsor-banner', !hide);
+  }
+
+  function closeSponsorBanner() {
+    try { sessionStorage.setItem(SPONSOR_BANNER_KEY, '1'); } catch (e) {}
+    renderSponsorBanner();
+  }
+
   function openEquipmentManager() {
     openSettings();
   }
@@ -2716,10 +2940,12 @@
   }
 
   function openSettings() {
-    // 장비 탭: 장비 목록·등록 + 하단 정비 주기
+    // 장비 탭: 목록·등록 + 구비 서류 + 정비 주기
     hideEquipmentForm();
     renderEquipmentList();
     updatePlanSummary();
+    selectedEquipmentDocTypes.clear();
+    renderEquipmentDocs();
     renderRecordServiceIntervalAlerts();
     $('settings-modal').classList.remove('hidden');
   }
@@ -3344,6 +3570,16 @@
     $('btn-save-work').addEventListener('click', saveWork);
     $('btn-new-work').addEventListener('click', startNewWorkRecord);
     $('btn-new-maint')?.addEventListener('click', startNewMaintRecord);
+    $('btn-share-equipment-docs')?.addEventListener('click', () => shareSelectedEquipmentDocs());
+    $('btn-clear-doc-selection')?.addEventListener('click', clearEquipmentDocSelection);
+    $('inp-equipment-doc')?.addEventListener('change', async event => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (file) await saveEquipmentDocFromFile(file);
+    });
+    $('sponsor-banner-close')?.addEventListener('click', closeSponsorBanner);
+    $('sponsor-banner-action')?.addEventListener('click', () => { openEquipmentManager(); });
+
     ['chk-fuel-quick', 'chk-fuel-quick-summary'].map($).filter(Boolean).forEach(input => input.addEventListener('change', event => toggleFuelQuick(event.target.checked)));
     $('inp-liters').addEventListener('input', updateFuelPreview);
     $('inp-unit-price').addEventListener('input', updateFuelPreview);
@@ -3429,7 +3665,7 @@
     openSubmissionModal, closeSubmissionModal, copyDailySubmission, shareDailySubmission
     , handleOperationPrimaryAction, openDayStatusPanel
     , openInspectionModal, closeInspectionModal, saveInspection, openFaultModal, closeFaultModal, saveFaultReport, resolveLatestFault
-    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openAlertsHub, closeAlertsHub, renderAlertsBadge, startNewMaintRecord, editMaintRecord, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
+    , navigateBottom, openMoreMenu, closeMoreMenu, openAlertComingSoon, closeAlertComingSoon, openAlertsHub, closeAlertsHub, renderAlertsBadge, startNewMaintRecord, editMaintRecord, shareSelectedEquipmentDocs, clearEquipmentDocSelection, closeSponsorBanner, openPhotoSourcePicker, closePhotoSourcePicker, choosePhotoSource
   });
 
   boot();
