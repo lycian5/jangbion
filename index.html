@@ -216,6 +216,15 @@
     .photo-preview { position:relative; margin-top:10px; }
     .photo-preview img { width:100%; max-height:280px; object-fit:cover; border-radius:12px; display:block; }
     .photo-remove-btn { position:absolute; top:8px; right:8px; background:rgba(0,0,0,.6); color:#fff; border:none; border-radius:50%; width:28px; height:28px; font-size:14px; cursor:pointer; }
+    .ai-analysis-panel { margin-top:10px; padding:12px; border:1px solid #bfdbfe; border-radius:12px; background:#eff6ff; color:#1e3a8a; font-size:.8rem; line-height:1.5; }
+    .ai-analysis-panel.hidden { display:none; }
+    .ai-analysis-title { font-weight:900; margin-bottom:5px; }
+    .ai-analysis-detail { color:#475569; }
+    .ai-analysis-detail.warning { color:#b45309; }
+    .crop-card { max-width:520px; }
+    .crop-stage { position:relative; width:100%; max-height:58vh; overflow:hidden; touch-action:none; background:#0f172a; border-radius:12px; }
+    .crop-stage img { display:block; width:100%; max-height:58vh; object-fit:contain; user-select:none; -webkit-user-drag:none; }
+    .crop-selection { position:absolute; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(15,23,42,.55); pointer-events:none; }
 
     .photo-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:10px; }
     .photo-thumb { position:relative; aspect-ratio:1/1; border-radius:10px; overflow:hidden; }
@@ -727,6 +736,10 @@
           <img id="usage-photo-img" alt="계기판 사진">
           <button class="photo-remove-btn" id="btn-usage-photo-remove" type="button" aria-label="계기판 사진 삭제">×</button>
         </div>
+        <div class="ai-analysis-panel hidden" id="usage-ai-panel" aria-live="polite">
+          <div class="ai-analysis-title" id="usage-ai-title"></div>
+          <div class="ai-analysis-detail" id="usage-ai-detail"></div>
+        </div>
       </div>
 
       <div class="form-group">
@@ -1208,6 +1221,19 @@
     <button class="btn btn-primary" type="button" onclick="choosePhotoSource('camera')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>카메라 촬영</button>
     <button class="btn btn-fuel" type="button" onclick="choosePhotoSource('album')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-camera"></use></svg>앨범에서 선택</button>
     <button class="btn btn-plain" type="button" onclick="closePhotoSourcePicker()">취소</button>
+  </div>
+</div>
+
+<div id="usage-crop-modal" class="modal-overlay elevated hidden">
+  <div class="modal-card crop-card" role="dialog" aria-modal="true" aria-labelledby="usage-crop-title">
+    <div class="card-title" id="usage-crop-title" style="margin-bottom:0">계기판 영역 자르기</div>
+    <p class="modal-hint">계기판의 숫자와 날짜가 보이는 영역을 손가락으로 드래그해 선택하세요.</p>
+    <div class="crop-stage" id="usage-crop-stage"><img id="usage-crop-image" alt="자르기 대상 계기판 사진"><div class="crop-selection" id="usage-crop-selection"></div></div>
+    <div class="input-row">
+      <button class="btn btn-primary" id="btn-usage-crop-apply" type="button">자르기 적용·분석</button>
+      <button class="btn btn-plain" id="btn-usage-crop-original" type="button">원본으로 분석</button>
+    </div>
+    <button class="btn btn-plain" id="btn-usage-crop-cancel" type="button">취소</button>
   </div>
 </div>
 
@@ -1944,6 +1970,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.6.1"></script>
+<script src="./app.js?v=3.6.2"></script>
 </body>
 </html>
