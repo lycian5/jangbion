@@ -5,16 +5,17 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.1';
+  const APP_VERSION = '3.6.4';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
-  const DB_VERSION = 7;
+  const DB_VERSION = 8;
   const MAX_WORK_PHOTOS = 4;
   const APPROX_STORAGE_LIMIT = 50 * 1024 * 1024;
   const IDB_NAME = 'jangbion_db';
   const IDB_VERSION = 1;
   const PHOTO_RETENTION_KEY = 'jangbion_photo_retention_days';
   const BACKUP_REMINDER_KEY = 'jangbion_last_backup_at';
+  const WORK_FIELD_LAYOUT_KEY = 'jangbion_work_field_layout_v1';
   const DEFAULT_PHOTO_RETENTION_DAYS = 90;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
@@ -114,7 +115,7 @@
   }
 
   function collectionKeys() {
-    return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports', 'equipmentDocs'];
+    return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports', 'equipmentDocs', 'aiImageAnalyses', 'aiCorrections'];
   }
 
   function walkPhotoFields(db, visitor) {
@@ -551,7 +552,9 @@
       operationSessions: normalizeOperations(raw.operationSessions, currentEquipmentId),
       inspections: normalizeInspections(raw.inspections, currentEquipmentId),
       faultReports: normalizeFaultReports(raw.faultReports, currentEquipmentId),
-      equipmentDocs: normalizeEquipmentDocs(raw.equipmentDocs, currentEquipmentId)
+      equipmentDocs: normalizeEquipmentDocs(raw.equipmentDocs, currentEquipmentId),
+      aiImageAnalyses: Array.isArray(raw.aiImageAnalyses) ? raw.aiImageAnalyses : [],
+      aiCorrections: Array.isArray(raw.aiCorrections) ? raw.aiCorrections : []
     };
   }
 
@@ -562,6 +565,10 @@
 
   let DB = loadDatabase();
   let currentUsagePhoto = null;
+  let currentUsageAnalysis = null;
+  let pendingUsagePhoto = null;
+  let usageCropRect = { x: 0.06, y: 0.38, width: 0.88, height: 0.36 };
+  let usageCropStart = null;
   let currentWorkPhotos = [];
   let editingWorkId = null;
   let editingMaintId = null;
@@ -580,6 +587,62 @@
   const INSTALL_HANDOFF_PARAM = 'install';
   const INSTALL_HANDOFF_SOURCE_PARAM = 'from';
   const KAKAO_HANDOFF_GUARD = 'jangbion:kakao-chrome-handoff';
+  const WORK_FIELD_DEFINITIONS = [
+    ['type', '작업 유형'], ['start', '작업 시작'], ['end', '작업 종료'], ['hours', '작업시간'], ['photo', '사진'],
+    ['place', '작업 장소'], ['project', '현장·프로젝트'], ['company', '작업 회사'], ['memo', '메모']
+  ];
+
+  function defaultWorkFieldLayout() {
+    return { order: WORK_FIELD_DEFINITIONS.map(([id]) => id), hidden: [] };
+  }
+
+  function getWorkFieldLayout() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(WORK_FIELD_LAYOUT_KEY));
+      const valid = new Set(WORK_FIELD_DEFINITIONS.map(([id]) => id));
+      const order = Array.isArray(saved?.order) ? saved.order.filter(id => valid.has(id)) : [];
+      valid.forEach(id => { if (!order.includes(id)) order.push(id); });
+      const hidden = Array.isArray(saved?.hidden) ? saved.hidden.filter(id => valid.has(id)) : [];
+      return { order, hidden };
+    } catch (error) { return defaultWorkFieldLayout(); }
+  }
+
+  function saveWorkFieldLayout(layout) {
+    try { localStorage.setItem(WORK_FIELD_LAYOUT_KEY, JSON.stringify(layout)); } catch (error) { console.warn(error); }
+  }
+
+  function applyWorkFieldLayout() {
+    const layout = getWorkFieldLayout();
+    const fields = $('work-form-fields');
+    layout.order.forEach(id => {
+      const field = fields.querySelector(`[data-work-field="${id}"]`);
+      if (field) {
+        field.classList.toggle('hidden', layout.hidden.includes(id));
+        fields.appendChild(field);
+      }
+    });
+    renderWorkFieldSettings(layout);
+  }
+
+  function renderWorkFieldSettings(layout = getWorkFieldLayout()) {
+    const container = $('work-field-settings');
+    container.replaceChildren(...layout.order.map((id, index) => {
+      const [, label] = WORK_FIELD_DEFINITIONS.find(([fieldId]) => fieldId === id);
+      const row = document.createElement('label'); row.className = 'work-field-setting';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.checked = !layout.hidden.includes(id); check.setAttribute('aria-label', `${label} 표시`);
+      check.addEventListener('change', () => {
+        layout.hidden = layout.hidden.filter(value => value !== id);
+        if (!check.checked) layout.hidden.push(id);
+        saveWorkFieldLayout(layout); applyWorkFieldLayout();
+      });
+      const name = document.createElement('span'); name.textContent = label;
+      const up = document.createElement('button'); up.type = 'button'; up.className = 'work-field-move'; up.textContent = '↑'; up.disabled = index === 0; up.setAttribute('aria-label', `${label} 위로 이동`);
+      up.addEventListener('click', event => { event.preventDefault(); [layout.order[index - 1], layout.order[index]] = [layout.order[index], layout.order[index - 1]]; saveWorkFieldLayout(layout); applyWorkFieldLayout(); });
+      const down = document.createElement('button'); down.type = 'button'; down.className = 'work-field-move'; down.textContent = '↓'; down.disabled = index === layout.order.length - 1; down.setAttribute('aria-label', `${label} 아래로 이동`);
+      down.addEventListener('click', event => { event.preventDefault(); [layout.order[index], layout.order[index + 1]] = [layout.order[index + 1], layout.order[index]]; saveWorkFieldLayout(layout); applyWorkFieldLayout(); });
+      row.append(check, name, up, down); return row;
+    }));
+  }
 
   function commit(mutator, failureMessage = '저장 공간이 부족합니다. 오래된 사진을 정리하거나 백업 후 다시 시도해주세요.') {
     const next = clone(DB);
@@ -1763,7 +1826,9 @@
     $('inp-odo').value = existing?.odometer ?? '';
     $('inp-memo').value = existing?.memo || '';
     currentUsagePhoto = existing?.photo || null;
+    currentUsageAnalysis = null;
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
+    setUsageAiPanel();
     renderDayStatusControls();
     updateUsagePreview();
   }
@@ -1877,6 +1942,149 @@
     });
   }
 
+  function compressImageDataUrl(source, maxDimension = 800, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('사진을 불러오지 못했습니다.'));
+      image.onload = () => {
+        const ratio = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      image.src = source;
+    });
+  }
+
+  function setUsageAiPanel(title = '', detail = '', warning = false) {
+    const panel = $('usage-ai-panel');
+    if (!title) {
+      panel.classList.add('hidden');
+      return;
+    }
+    $('usage-ai-title').textContent = title;
+    $('usage-ai-detail').textContent = detail;
+    $('usage-ai-detail').classList.toggle('warning', warning);
+    panel.classList.remove('hidden');
+  }
+
+  function renderUsageCropSelection() {
+    const selection = $('usage-crop-selection');
+    selection.style.left = `${usageCropRect.x * 100}%`;
+    selection.style.top = `${usageCropRect.y * 100}%`;
+    selection.style.width = `${usageCropRect.width * 100}%`;
+    selection.style.height = `${usageCropRect.height * 100}%`;
+  }
+
+  function usageCropPoint(event) {
+    const rect = $('usage-crop-stage').getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+    };
+  }
+
+  function openUsageCropper(dataUrl) {
+    pendingUsagePhoto = dataUrl;
+    usageCropRect = { x: 0.06, y: 0.38, width: 0.88, height: 0.36 };
+    const image = $('usage-crop-image');
+    image.onload = renderUsageCropSelection;
+    image.src = dataUrl;
+    $('usage-crop-modal').classList.remove('hidden');
+  }
+
+  function closeUsageCropper() {
+    pendingUsagePhoto = null;
+    usageCropStart = null;
+    $('usage-crop-modal').classList.add('hidden');
+  }
+
+  async function cropUsagePhoto() {
+    const source = pendingUsagePhoto;
+    if (!source) throw new Error('자를 사진이 없습니다.');
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('사진을 불러오지 못했습니다.'));
+      image.src = source;
+    });
+    const x = Math.round(image.naturalWidth * usageCropRect.x);
+    const y = Math.round(image.naturalHeight * usageCropRect.y);
+    const width = Math.max(1, Math.round(image.naturalWidth * usageCropRect.width));
+    const height = Math.max(1, Math.round(image.naturalHeight * usageCropRect.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(image, x, y, width, height, 0, 0, width, height);
+    return compressImageDataUrl(canvas.toDataURL('image/jpeg', 0.9));
+  }
+
+  function analysisNumber(value) {
+    return Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  }
+
+  function applyUsageAnalysis(result) {
+    const fields = result?.fields || {};
+    const confidence = result?.fieldConfidence || {};
+    const baseline = getBaseline(selectedDate());
+    const suggestions = [];
+    const warnings = [];
+    let hourNeedsReview = Boolean(result?.needsReview);
+    let odometerNeedsReview = Boolean(result?.needsReview);
+    const hourMeter = analysisNumber(fields.hourMeter);
+    const odometer = analysisNumber(fields.odometer);
+
+    if (hourMeter != null) {
+      if (baseline && hourMeter < numberOr(baseline.hourMeter)) { hourNeedsReview = true; warnings.push('시간계가 이전 기록보다 작습니다.'); }
+      if (baseline && hourMeter - numberOr(baseline.hourMeter) > 24) { hourNeedsReview = true; warnings.push('당일 사용시간이 24시간을 넘습니다.'); }
+      if (!hourNeedsReview && numberOr(confidence.hourMeter) >= 75) { $('inp-hm').value = hourMeter; suggestions.push(`시간계 ${formatNumber(hourMeter)} h`); }
+    }
+    if (odometer != null) {
+      if (baseline && odometer < numberOr(baseline.odometer)) { odometerNeedsReview = true; warnings.push('거리계가 이전 기록보다 작습니다.'); }
+      if (!odometerNeedsReview && numberOr(confidence.odometer) >= 75) { $('inp-odo').value = odometer; suggestions.push(`거리계 ${formatNumber(odometer)} km`); }
+    }
+    const displayDate = isDateString(fields.displayDate) ? fields.displayDate : '';
+    if (displayDate && displayDate !== selectedDate()) warnings.push(`사진 날짜 ${displayDate}는 선택한 기록 날짜와 다릅니다.`);
+    const needsReview = hourNeedsReview || odometerNeedsReview;
+    currentUsageAnalysis = { id: uid('analysis'), fields: { hourMeter, odometer, displayDate }, fieldConfidence: confidence, rawText: String(result?.rawText || ''), needsReview };
+    updateUsagePreview();
+    if (suggestions.length) setUsageAiPanel(needsReview ? 'AI 분석 결과 · 확인 필요' : 'AI 자동입력 완료', `${suggestions.join(' · ')}${warnings.length ? ` · ${warnings.join(' ')}` : ''}`, needsReview || warnings.length > 0);
+    else setUsageAiPanel('AI 분석 결과 · 직접 확인 필요', warnings.join(' ') || '숫자를 확실히 읽지 못했습니다. 직접 입력하거나 다시 촬영해주세요.', true);
+  }
+
+  async function analyzeUsagePhoto(photo) {
+    if (!navigator.onLine) return setUsageAiPanel('사진 분석을 사용할 수 없습니다', '오프라인 상태입니다. 사진은 저장되고 직접 입력할 수 있습니다.', true);
+    setUsageAiPanel('계기판 숫자 확인 중…', '시간계와 거리계를 분석하고 있습니다.');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('/api/ai/analyze-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ context: 'usage', equipmentId: DB.currentEquipmentId, date: selectedDate(), image: photo })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || '사진 분석에 실패했습니다.');
+      applyUsageAnalysis(payload);
+    } catch (error) {
+      const message = error.name === 'AbortError' ? '분석 시간이 초과되었습니다.' : error.message;
+      setUsageAiPanel('사진 분석을 사용할 수 없습니다', `${message} 직접 입력할 수 있습니다.`, true);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function applyUsagePhoto(photo) {
+    currentUsagePhoto = photo;
+    currentUsageAnalysis = null;
+    showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
+    await analyzeUsagePhoto(currentUsagePhoto);
+  }
+
   function saveUsage() {
     const hourMeter = Number.parseFloat($('inp-hm').value);
     const odometer = Number.parseFloat($('inp-odo').value);
@@ -1895,12 +2103,26 @@
       hourMeter, odometer, memo: $('inp-memo').value.trim().slice(0, 500), photo: currentUsagePhoto,
       createdAt: existing?.createdAt || existing?.created_at || new Date().toISOString(), updatedAt: new Date().toISOString()
     };
+    const analysis = currentUsageAnalysis;
     const saved = commit(next => {
       clearDayStatusIn(next, DB.currentEquipmentId, date);
       const index = next.dailyLogs.findIndex(item => item.id === record.id);
       if (index >= 0) next.dailyLogs[index] = record; else next.dailyLogs.push(record);
+      if (analysis) {
+        next.aiImageAnalyses.push({
+          id: analysis.id, equipmentId: record.equipmentId, usageRecordId: record.id, recordType: 'usage',
+          rawText: analysis.rawText, extractedData: analysis.fields, fieldConfidence: analysis.fieldConfidence,
+          needsReview: analysis.needsReview, userConfirmed: true, createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString()
+        });
+        ['hourMeter', 'odometer'].forEach(fieldName => {
+          const aiValue = analysis.fields[fieldName];
+          const userValue = record[fieldName];
+          if (aiValue != null && aiValue !== userValue) next.aiCorrections.push({ id: uid('correction'), analysisId: analysis.id, fieldName, aiValue, userValue, createdAt: new Date().toISOString() });
+        });
+      }
     });
     if (saved) {
+      currentUsageAnalysis = null;
       showToast('사용 기록을 저장했습니다.');
       navigateBottom('home');
     }
@@ -1945,7 +2167,7 @@
       const row = document.createElement('div'); row.className = 'work-record-item';
       const copy = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = `${index + 1}. ${record.workType || '작업'} · ${numberOr(record.hours).toFixed(1)}시간`;
-      const detail = document.createElement('span'); detail.textContent = [record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '', record.place || record.project || record.memo || '상세 없음'].filter(Boolean).join(' · ');
+      const detail = document.createElement('span'); detail.textContent = [record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '', record.company, record.place || record.project || record.memo || '상세 없음'].filter(Boolean).join(' · ');
       const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'work-record-edit'; edit.textContent = '수정'; edit.addEventListener('click', () => editWorkRecord(record.id));
       copy.append(title, detail); row.append(copy, edit); return row;
     }));
@@ -1957,6 +2179,7 @@
     $('inp-work-end').value = record?.endTime || '';
     $('inp-work-place').value = record?.place || '';
     $('inp-work-project').value = record?.project || '';
+    $('inp-work-company').value = record?.company || '';
     $('inp-work-hours').value = record?.hours ?? '';
     $('inp-work-memo').value = record?.memo || '';
     currentWorkPhotos = clone(record?.photos || (record?.photo ? [record.photo] : []));
@@ -1992,6 +2215,8 @@
       if (minutes < 0) minutes += 1440;
       hours = Math.round(minutes / 6) / 10;
     }
+    const hoursVisible = !$('work-form-fields').querySelector('[data-work-field="hours"]').classList.contains('hidden');
+    if (!Number.isFinite(hours) && !hoursVisible) hours = 0;
     if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
       showToast('작업시간을 0~24시간 범위로 입력해주세요.');
       return;
@@ -2001,7 +2226,7 @@
     const record = {
       id: existing?.id || uid('work'), equipmentId: DB.currentEquipmentId, date, hours,
       workType: $('inp-work-type').value, startTime, endTime,
-      place: $('inp-work-place').value.trim().slice(0, 120), project: $('inp-work-project').value.trim().slice(0, 120),
+      place: $('inp-work-place').value.trim().slice(0, 120), project: $('inp-work-project').value.trim().slice(0, 120), company: $('inp-work-company').value.trim().slice(0, 120),
       memo: $('inp-work-memo').value.trim().slice(0, 500), photos: currentWorkPhotos.slice(0, MAX_WORK_PHOTOS),
       createdAt: existing?.createdAt || existing?.created_at || new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3540,6 +3765,7 @@
     resetLegacyControl('btn-work-photo-pick');
     resetLegacyControl('inp-work-photo');
     resetLegacyControl('btn-save-work');
+    $('btn-work-field-settings').addEventListener('click', () => $('work-field-settings').classList.toggle('hidden'));
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
     $('equipment-select').addEventListener('change', event => selectEquipment(event.target.value));
     $('dateSelect').addEventListener('change', () => {
@@ -3558,14 +3784,50 @@
       event.target.value = '';
       if (!file) return;
       try {
-        currentUsagePhoto = await compressImage(file);
-        showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
+        const source = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('사진을 불러오지 못했습니다.'));
+          reader.readAsDataURL(file);
+        });
+        openUsageCropper(source);
       } catch (error) { showToast(error.message); }
     });
     $('btn-usage-photo-remove').addEventListener('click', () => {
       currentUsagePhoto = null;
+      currentUsageAnalysis = null;
       showPhotoPreview('usage-photo-preview', 'usage-photo-img', null);
+      setUsageAiPanel();
     });
+    $('usage-crop-stage').addEventListener('pointerdown', event => {
+      usageCropStart = usageCropPoint(event);
+      $('usage-crop-stage').setPointerCapture?.(event.pointerId);
+    });
+    $('usage-crop-stage').addEventListener('pointermove', event => {
+      if (!usageCropStart) return;
+      const point = usageCropPoint(event);
+      usageCropRect = { x: Math.min(usageCropStart.x, point.x), y: Math.min(usageCropStart.y, point.y), width: Math.abs(point.x - usageCropStart.x), height: Math.abs(point.y - usageCropStart.y) };
+      renderUsageCropSelection();
+    });
+    $('usage-crop-stage').addEventListener('pointerup', () => { usageCropStart = null; });
+    $('btn-usage-crop-apply').addEventListener('click', async () => {
+      if (usageCropRect.width < 0.08 || usageCropRect.height < 0.08) return showToast('자를 영역을 조금 더 크게 선택해주세요.');
+      try {
+        const cropped = await cropUsagePhoto();
+        closeUsageCropper();
+        await applyUsagePhoto(cropped);
+      } catch (error) { showToast(error.message); }
+    });
+    $('btn-usage-crop-original').addEventListener('click', async () => {
+      const source = pendingUsagePhoto;
+      if (!source) return;
+      try {
+        const compressed = await compressImageDataUrl(source);
+        closeUsageCropper();
+        await applyUsagePhoto(compressed);
+      } catch (error) { showToast(error.message); }
+    });
+    $('btn-usage-crop-cancel').addEventListener('click', closeUsageCropper);
     $('btn-work-photo-pick').addEventListener('click', () => openPhotoSourcePicker('inp-work-photo'));
     $('inp-work-photo').addEventListener('change', async event => {
       const files = Array.from(event.target.files || []);
@@ -3636,6 +3898,7 @@
     updateDayBadge();
     updateOnlineStatus();
     updateEquipmentUI();
+    applyWorkFieldLayout();
     bindInstallEvents();
     updateInstallUI();
     bindEvents();
