@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.3';
+  const APP_VERSION = '3.6.4';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -1955,8 +1955,7 @@
         context.fillStyle = '#fff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        try { resolve(canvas.toDataURL('image/webp', quality)); }
-        catch (error) { resolve(canvas.toDataURL('image/jpeg', quality)); }
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       image.src = source;
     });
