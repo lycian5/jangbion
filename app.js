@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.2';
+  const APP_VERSION = '3.6.3';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -15,6 +15,7 @@
   const IDB_VERSION = 1;
   const PHOTO_RETENTION_KEY = 'jangbion_photo_retention_days';
   const BACKUP_REMINDER_KEY = 'jangbion_last_backup_at';
+  const WORK_FIELD_LAYOUT_KEY = 'jangbion_work_field_layout_v1';
   const DEFAULT_PHOTO_RETENTION_DAYS = 90;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
@@ -586,6 +587,62 @@
   const INSTALL_HANDOFF_PARAM = 'install';
   const INSTALL_HANDOFF_SOURCE_PARAM = 'from';
   const KAKAO_HANDOFF_GUARD = 'jangbion:kakao-chrome-handoff';
+  const WORK_FIELD_DEFINITIONS = [
+    ['type', '작업 유형'], ['start', '작업 시작'], ['end', '작업 종료'], ['hours', '작업시간'], ['photo', '사진'],
+    ['place', '작업 장소'], ['project', '현장·프로젝트'], ['company', '작업 회사'], ['memo', '메모']
+  ];
+
+  function defaultWorkFieldLayout() {
+    return { order: WORK_FIELD_DEFINITIONS.map(([id]) => id), hidden: [] };
+  }
+
+  function getWorkFieldLayout() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(WORK_FIELD_LAYOUT_KEY));
+      const valid = new Set(WORK_FIELD_DEFINITIONS.map(([id]) => id));
+      const order = Array.isArray(saved?.order) ? saved.order.filter(id => valid.has(id)) : [];
+      valid.forEach(id => { if (!order.includes(id)) order.push(id); });
+      const hidden = Array.isArray(saved?.hidden) ? saved.hidden.filter(id => valid.has(id)) : [];
+      return { order, hidden };
+    } catch (error) { return defaultWorkFieldLayout(); }
+  }
+
+  function saveWorkFieldLayout(layout) {
+    try { localStorage.setItem(WORK_FIELD_LAYOUT_KEY, JSON.stringify(layout)); } catch (error) { console.warn(error); }
+  }
+
+  function applyWorkFieldLayout() {
+    const layout = getWorkFieldLayout();
+    const fields = $('work-form-fields');
+    layout.order.forEach(id => {
+      const field = fields.querySelector(`[data-work-field="${id}"]`);
+      if (field) {
+        field.classList.toggle('hidden', layout.hidden.includes(id));
+        fields.appendChild(field);
+      }
+    });
+    renderWorkFieldSettings(layout);
+  }
+
+  function renderWorkFieldSettings(layout = getWorkFieldLayout()) {
+    const container = $('work-field-settings');
+    container.replaceChildren(...layout.order.map((id, index) => {
+      const [, label] = WORK_FIELD_DEFINITIONS.find(([fieldId]) => fieldId === id);
+      const row = document.createElement('label'); row.className = 'work-field-setting';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.checked = !layout.hidden.includes(id); check.setAttribute('aria-label', `${label} 표시`);
+      check.addEventListener('change', () => {
+        layout.hidden = layout.hidden.filter(value => value !== id);
+        if (!check.checked) layout.hidden.push(id);
+        saveWorkFieldLayout(layout); applyWorkFieldLayout();
+      });
+      const name = document.createElement('span'); name.textContent = label;
+      const up = document.createElement('button'); up.type = 'button'; up.className = 'work-field-move'; up.textContent = '↑'; up.disabled = index === 0; up.setAttribute('aria-label', `${label} 위로 이동`);
+      up.addEventListener('click', event => { event.preventDefault(); [layout.order[index - 1], layout.order[index]] = [layout.order[index], layout.order[index - 1]]; saveWorkFieldLayout(layout); applyWorkFieldLayout(); });
+      const down = document.createElement('button'); down.type = 'button'; down.className = 'work-field-move'; down.textContent = '↓'; down.disabled = index === layout.order.length - 1; down.setAttribute('aria-label', `${label} 아래로 이동`);
+      down.addEventListener('click', event => { event.preventDefault(); [layout.order[index], layout.order[index + 1]] = [layout.order[index + 1], layout.order[index]]; saveWorkFieldLayout(layout); applyWorkFieldLayout(); });
+      row.append(check, name, up, down); return row;
+    }));
+  }
 
   function commit(mutator, failureMessage = '저장 공간이 부족합니다. 오래된 사진을 정리하거나 백업 후 다시 시도해주세요.') {
     const next = clone(DB);
@@ -2111,7 +2168,7 @@
       const row = document.createElement('div'); row.className = 'work-record-item';
       const copy = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = `${index + 1}. ${record.workType || '작업'} · ${numberOr(record.hours).toFixed(1)}시간`;
-      const detail = document.createElement('span'); detail.textContent = [record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '', record.place || record.project || record.memo || '상세 없음'].filter(Boolean).join(' · ');
+      const detail = document.createElement('span'); detail.textContent = [record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '', record.company, record.place || record.project || record.memo || '상세 없음'].filter(Boolean).join(' · ');
       const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'work-record-edit'; edit.textContent = '수정'; edit.addEventListener('click', () => editWorkRecord(record.id));
       copy.append(title, detail); row.append(copy, edit); return row;
     }));
@@ -2123,6 +2180,7 @@
     $('inp-work-end').value = record?.endTime || '';
     $('inp-work-place').value = record?.place || '';
     $('inp-work-project').value = record?.project || '';
+    $('inp-work-company').value = record?.company || '';
     $('inp-work-hours').value = record?.hours ?? '';
     $('inp-work-memo').value = record?.memo || '';
     currentWorkPhotos = clone(record?.photos || (record?.photo ? [record.photo] : []));
@@ -2158,6 +2216,8 @@
       if (minutes < 0) minutes += 1440;
       hours = Math.round(minutes / 6) / 10;
     }
+    const hoursVisible = !$('work-form-fields').querySelector('[data-work-field="hours"]').classList.contains('hidden');
+    if (!Number.isFinite(hours) && !hoursVisible) hours = 0;
     if (!Number.isFinite(hours) || hours < 0 || hours > 24) {
       showToast('작업시간을 0~24시간 범위로 입력해주세요.');
       return;
@@ -2167,7 +2227,7 @@
     const record = {
       id: existing?.id || uid('work'), equipmentId: DB.currentEquipmentId, date, hours,
       workType: $('inp-work-type').value, startTime, endTime,
-      place: $('inp-work-place').value.trim().slice(0, 120), project: $('inp-work-project').value.trim().slice(0, 120),
+      place: $('inp-work-place').value.trim().slice(0, 120), project: $('inp-work-project').value.trim().slice(0, 120), company: $('inp-work-company').value.trim().slice(0, 120),
       memo: $('inp-work-memo').value.trim().slice(0, 500), photos: currentWorkPhotos.slice(0, MAX_WORK_PHOTOS),
       createdAt: existing?.createdAt || existing?.created_at || new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3706,6 +3766,7 @@
     resetLegacyControl('btn-work-photo-pick');
     resetLegacyControl('inp-work-photo');
     resetLegacyControl('btn-save-work');
+    $('btn-work-field-settings').addEventListener('click', () => $('work-field-settings').classList.toggle('hidden'));
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
     $('equipment-select').addEventListener('change', event => selectEquipment(event.target.value));
     $('dateSelect').addEventListener('change', () => {
@@ -3838,6 +3899,7 @@
     updateDayBadge();
     updateOnlineStatus();
     updateEquipmentUI();
+    applyWorkFieldLayout();
     bindInstallEvents();
     updateInstallUI();
     bindEvents();
