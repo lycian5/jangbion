@@ -2725,7 +2725,7 @@
     });
     if (type === 'all' || type === 'work') DB.workLogs.filter(allowed).forEach(item => {
       const equipment = equipmentMap.get(item.equipmentId); if (!equipment) return;
-      records.push({ type: 'work', date: item.date, equipment, icon: 'clipboard', title: '작업', detail: item.memo || '메모 없음', value: `${numberOr(item.hours).toFixed(1)}h`, createdAt: item.createdAt || item.created_at });
+      records.push({ type: 'work', date: item.date, equipment, icon: 'clipboard', title: '작업', detail: item.company || '작업 회사 미입력', value: `${numberOr(item.hours).toFixed(1)}h`, createdAt: item.createdAt || item.created_at });
     });
     if (type === 'all' || type === 'fuel') DB.fuelLogs.filter(allowed).forEach(item => {
       const equipment = equipmentMap.get(item.equipmentId); if (!equipment) return;
