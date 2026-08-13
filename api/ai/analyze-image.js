@@ -55,6 +55,12 @@ function parseJson(text) {
   return JSON.parse(normalized);
 }
 
+function upstreamFailure(response, data) {
+  const error = new Error(String(data?.error?.message || data?.message || `HTTP ${response.status}`).slice(0, 500));
+  error.upstreamStatus = response.status;
+  return error;
+}
+
 function normalizeResult(parsed) {
   const numberOrNull = value => Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(parsed?.displayDate || '')) ? parsed.displayDate : null;
@@ -82,7 +88,7 @@ async function analyzeWithResponses(config, image, signal) {
     })
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || '분석 서비스 오류');
+  if (!response.ok) throw upstreamFailure(response, data);
   return parseJson(data.output_text);
 }
 
@@ -97,7 +103,7 @@ async function analyzeWithChat(config, image, signal) {
     })
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || '분석 서비스 오류');
+  if (!response.ok) throw upstreamFailure(response, data);
   return parseJson(data?.choices?.[0]?.message?.content);
 }
 
@@ -119,6 +125,13 @@ module.exports = async (req, res) => {
     const parsed = config.kind === 'responses' ? await analyzeWithResponses(config, image, controller.signal) : await analyzeWithChat(config, image, controller.signal);
     return send(res, 200, normalizeResult(parsed));
   } catch (error) {
+    console.error('AI image analysis failed', {
+      provider: config.provider,
+      model: config.model,
+      upstreamStatus: error.upstreamStatus || null,
+      errorName: error.name,
+      errorMessage: String(error.message || '').slice(0, 500)
+    });
     const message = error.name === 'AbortError' ? '사진 분석 시간이 초과되었습니다.' : '사진 분석에 실패했습니다.';
     return send(res, 502, { message });
   } finally {
