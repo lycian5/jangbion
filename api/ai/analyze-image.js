@@ -52,7 +52,23 @@ function providerConfig() {
 
 function parseJson(text) {
   const normalized = String(text || '').replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-  return JSON.parse(normalized);
+  try { return JSON.parse(normalized); }
+  catch (error) {
+    const objectText = normalized.match(/\{[\s\S]*\}/)?.[0];
+    if (objectText) return JSON.parse(objectText);
+    throw error;
+  }
+}
+
+function responseText(data) {
+  if (String(data?.output_text || '').trim()) return data.output_text;
+  const text = (data?.output || []).flatMap(item => item?.content || [])
+    .map(item => item?.text || item?.refusal || '')
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  if (text) return text;
+  throw new Error(`OpenAI response did not include text output (${data?.status || 'unknown'}).`);
 }
 
 function upstreamFailure(response, data) {
@@ -89,7 +105,7 @@ async function analyzeWithResponses(config, image, signal) {
   });
   const data = await response.json();
   if (!response.ok) throw upstreamFailure(response, data);
-  return parseJson(data.output_text);
+  return parseJson(responseText(data));
 }
 
 async function analyzeWithChat(config, image, signal) {
