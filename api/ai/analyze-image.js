@@ -2,7 +2,7 @@ const attemptsByIp = new Map();
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 12;
 const MAX_IMAGE_CHARS = 2_700_000;
-const METER_INSTRUCTION = '계기판 화면만 분석하세요. 누적 시간계(Hr/HR/h)와 누적 거리계(km)를 읽고, 화면 날짜가 있으면 YYYY-MM-DD로 읽으세요. 추측하지 말고 확실하지 않으면 null과 낮은 신뢰도를 반환하세요. 사진 날짜는 참고용이며 기록 날짜를 정하지 않습니다.';
+const METER_INSTRUCTION = '계기판 화면만 분석하세요. 누적 시간계(Hr/HR/h)와 누적 거리계(km)를 읽고, 화면 날짜가 있으면 YYYY-MM-DD로 읽으세요. 추측하지 말고 확실하지 않으면 null과 낮은 신뢰도를 반환하세요. 같은 종류의 숫자가 둘 이상이면 후보다 배열에 모두 넣고 needsReview를 true로 하세요. 사진 날짜는 참고용이며 기록 날짜를 정하지 않습니다.';
 
 function send(res, status, payload) {
   res.setHeader('Cache-Control', 'no-store');
@@ -21,12 +21,14 @@ function allowRequest(req) {
 
 const responseSchema = {
   type: 'object', additionalProperties: false,
-  required: ['hourMeter', 'odometer', 'displayDate', 'rawText', 'fieldConfidence', 'needsReview'],
+  required: ['hourMeter', 'odometer', 'displayDate', 'rawText', 'fieldConfidence', 'needsReview', 'hourMeterCandidates', 'odometerCandidates'],
   properties: {
     hourMeter: { anyOf: [{ type: 'number', minimum: 0 }, { type: 'null' }] },
     odometer: { anyOf: [{ type: 'number', minimum: 0 }, { type: 'null' }] },
     displayDate: { anyOf: [{ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }, { type: 'null' }] },
     rawText: { type: 'string', maxLength: 500 },
+    hourMeterCandidates: { type: 'array', maxItems: 4, items: { type: 'number', minimum: 0 } },
+    odometerCandidates: { type: 'array', maxItems: 4, items: { type: 'number', minimum: 0 } },
     fieldConfidence: {
       type: 'object', additionalProperties: false, required: ['hourMeter', 'odometer', 'displayDate'],
       properties: {
@@ -77,6 +79,24 @@ function upstreamFailure(response, data) {
   return error;
 }
 
+function uniqueNumbers(values, primary) {
+  const list = [];
+  const seen = new Set();
+  (Array.isArray(values) ? values : []).concat(primary == null ? [] : [primary]).forEach(value => {
+    const number = Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+    if (number == null || seen.has(number)) return;
+    seen.add(number);
+    list.push(number);
+  });
+  return list.slice(0, 4);
+}
+
+function fieldSource(value, score, ambiguous) {
+  if (value == null || ambiguous || score < 75) return 'unknown';
+  if (score >= 95) return 'confirmed';
+  return 'suggested';
+}
+
 function normalizeResult(parsed) {
   const numberOrNull = value => Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(parsed?.displayDate || '')) ? parsed.displayDate : null;
@@ -84,12 +104,26 @@ function normalizeResult(parsed) {
   const score = value => Math.max(0, Math.min(100, Number.parseInt(value, 10) || 0));
   const hourMeter = numberOrNull(parsed?.hourMeter);
   const odometer = numberOrNull(parsed?.odometer);
+  const hourMeterCandidates = uniqueNumbers(parsed?.hourMeterCandidates, hourMeter);
+  const odometerCandidates = uniqueNumbers(parsed?.odometerCandidates, odometer);
+  const hourScore = score(confidence.hourMeter);
+  const odometerScore = score(confidence.odometer);
+  const dateScore = score(confidence.displayDate);
+  const ambiguousHour = hourMeterCandidates.length > 1;
+  const ambiguousOdometer = odometerCandidates.length > 1;
   return {
     type: 'meter',
     fields: { hourMeter, odometer, displayDate: date },
-    fieldSources: { hourMeter: hourMeter == null ? 'unknown' : 'confirmed', odometer: odometer == null ? 'unknown' : 'confirmed', displayDate: date == null ? 'unknown' : 'confirmed' },
-    fieldConfidence: { hourMeter: score(confidence.hourMeter), odometer: score(confidence.odometer), displayDate: score(confidence.displayDate) },
-    needsReview: Boolean(parsed?.needsReview), rawText: String(parsed?.rawText || '').slice(0, 500)
+    fieldSources: {
+      hourMeter: fieldSource(hourMeter, hourScore, ambiguousHour),
+      odometer: fieldSource(odometer, odometerScore, ambiguousOdometer),
+      displayDate: date == null ? 'unknown' : 'confirmed'
+    },
+    fieldConfidence: { hourMeter: hourScore, odometer: odometerScore, displayDate: dateScore },
+    hourMeterCandidates,
+    odometerCandidates,
+    needsReview: Boolean(parsed?.needsReview) || ambiguousHour || ambiguousOdometer,
+    rawText: String(parsed?.rawText || '').slice(0, 500)
   };
 }
 
@@ -109,7 +143,7 @@ async function analyzeWithResponses(config, image, signal) {
 }
 
 async function analyzeWithChat(config, image, signal) {
-  const jsonInstruction = `${METER_INSTRUCTION} 응답은 다른 설명 없이 다음 JSON만 반환하세요: {"hourMeter":number|null,"odometer":number|null,"displayDate":"YYYY-MM-DD"|null,"rawText":string,"fieldConfidence":{"hourMeter":0-100,"odometer":0-100,"displayDate":0-100},"needsReview":boolean}.`;
+  const jsonInstruction = `${METER_INSTRUCTION} 응답은 다른 설명 없이 다음 JSON만 반환하세요: {"hourMeter":number|null,"odometer":number|null,"displayDate":"YYYY-MM-DD"|null,"rawText":string,"hourMeterCandidates":number[],"odometerCandidates":number[],"fieldConfidence":{"hourMeter":0-100,"odometer":0-100,"displayDate":0-100},"needsReview":boolean}.`;
   const response = await fetch(config.endpoint, {
     method: 'POST', signal,
     headers: { Authorization: `Bearer ${config.key}`, 'Content-Type': 'application/json' },

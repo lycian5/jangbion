@@ -221,6 +221,11 @@
     .ai-analysis-title { font-weight:900; margin-bottom:5px; }
     .ai-analysis-detail { color:#475569; }
     .ai-analysis-detail.warning { color:#b45309; }
+    .ai-analysis-date { margin-top:6px; color:#1e3a8a; font-weight:800; }
+    .ai-analysis-date.hidden { display:none; }
+    .hint.ai-applied { color:#1d4ed8; font-weight:800; }
+    .hint.ai-review { color:#b45309; font-weight:800; }
+    .hint.ai-user { color:#0f766e; font-weight:800; }
     .crop-card { max-width:520px; }
     .crop-stage { position:relative; width:100%; max-height:58vh; overflow:hidden; touch-action:none; background:#0f172a; border-radius:12px; }
     .crop-stage img { display:block; width:100%; max-height:58vh; object-fit:contain; user-select:none; -webkit-user-drag:none; }
@@ -718,12 +723,12 @@
         <div class="form-group">
           <label class="form-label">현재 시간계 (h)</label>
           <input class="form-input" id="inp-hm" type="number" step="0.1" min="0" placeholder="예) 1234.5">
-          <p class="hint">계기판 표시값</p>
+          <p class="hint" id="hm-ai-status">계기판 표시값</p>
         </div>
         <div class="form-group">
           <label class="form-label">현재 거리계 (km)</label>
           <input class="form-input" id="inp-odo" type="number" step="0.1" min="0" placeholder="예) 5678.2">
-          <p class="hint">계기판 표시값</p>
+          <p class="hint" id="odo-ai-status">계기판 표시값</p>
         </div>
       </div>
 
@@ -746,9 +751,11 @@
           <img id="usage-photo-img" alt="계기판 사진">
           <button class="photo-remove-btn" id="btn-usage-photo-remove" type="button" aria-label="계기판 사진 삭제">×</button>
         </div>
+        <p class="hint" id="usage-ai-privacy">자르기 적용 시 자른 계기판 사진만 분석 서버로 보내 시간계·거리계를 읽습니다. 분석 결과는 바로 저장되지 않으며, 기록은 직접 확인한 뒤 저장합니다. 자르기를 취소하면 원본 사진을 유지하고 분석하지 않습니다. 사진은 제3자 AI로 전송될 수 있고, 분석 이력·수정값은 학습에 쓰지 않습니다.</p>
         <div class="ai-analysis-panel hidden" id="usage-ai-panel" aria-live="polite">
           <div class="ai-analysis-title" id="usage-ai-title"></div>
           <div class="ai-analysis-detail" id="usage-ai-detail"></div>
+          <div class="ai-analysis-date hidden" id="usage-ai-date"></div>
         </div>
       </div>
 
@@ -1116,7 +1123,7 @@
 <div id="alerts-hub-modal" class="modal-overlay hidden">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="alerts-hub-title">
     <div class="card-title" id="alerts-hub-title" style="margin-bottom:0"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-bell"></use></svg>알림</div>
-    <p class="modal-hint">오늘 미입력과 정비 주기(DPF·구리스·엔진/미션/대우 오일)를 모았습니다. 주기를 누르면 상세 표시(사용 탭)로 이동합니다.</p>
+    <p class="modal-hint">선택한 장비와 날짜의 미입력, 정비 주기(DPF·구리스·엔진/미션/대우 오일), 운행 제한을 모았습니다. 정상 주기는 목록에만 보이고 알림 숫자에는 넣지 않습니다.</p>
     <div id="alerts-hub-list" class="alerts-hub-list" aria-live="polite"></div>
     <button class="btn btn-plain" type="button" onclick="closeAlertsHub()">닫기</button>
   </div>
@@ -1211,12 +1218,13 @@
 <div id="usage-crop-modal" class="modal-overlay elevated hidden">
   <div class="modal-card crop-card" role="dialog" aria-modal="true" aria-labelledby="usage-crop-title">
     <div class="card-title" id="usage-crop-title" style="margin-bottom:0">계기판 영역 자르기</div>
-    <p class="modal-hint">계기판의 숫자와 날짜가 보이는 영역을 손가락으로 드래그해 선택하세요.</p>
+    <p class="modal-hint">계기판 숫자 화면만 드래그해 선택하세요. 비율은 고정하지 않습니다. 자르기를 적용한 사진만 분석하고 증빙으로 저장합니다.</p>
     <div class="crop-stage" id="usage-crop-stage"><img id="usage-crop-image" alt="자르기 대상 계기판 사진"><div class="crop-selection" id="usage-crop-selection"></div></div>
     <div class="input-row">
-      <button class="btn btn-primary" id="btn-usage-crop-apply" type="button">자르기 적용·분석</button>
-      <button class="btn btn-plain" id="btn-usage-crop-original" type="button">원본으로 분석</button>
+      <button class="btn btn-primary" id="btn-usage-crop-apply" type="button">자르기 적용</button>
+      <button class="btn btn-plain" id="btn-usage-crop-reset" type="button">원본으로 되돌리기</button>
     </div>
+    <button class="btn btn-plain" id="btn-usage-crop-reselect" type="button">다시 선택</button>
     <button class="btn btn-plain" id="btn-usage-crop-cancel" type="button">취소</button>
   </div>
 </div>
@@ -1236,6 +1244,7 @@
         </div>
         <button class="btn btn-plain" type="button" id="btn-check-update" style="width:auto;min-height:36px;padding:8px 12px;font-size:.78rem;">업데이트 확인</button>
       </div>
+      <p class="hint">계기판 사진 분석은 자른 사진을 제3자 AI로 보내 시간계·거리계만 제안합니다. 분석 결과는 바로 저장되지 않고, 분석 이력·수정값은 학습에 쓰지 않습니다. 키와 공급자 정보는 브라우저에 두지 않습니다.</p>
     </div>
 
     <div id="data-panel-font" class="data-settings-panel">
@@ -1954,6 +1963,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.6.4"></script>
+<script src="./app.js?v=3.6.5"></script>
 </body>
 </html>

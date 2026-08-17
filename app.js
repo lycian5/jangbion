@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.4';
+  const APP_VERSION = '3.6.5';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -118,7 +118,7 @@
     return ['equipments', 'dailyLogs', 'workLogs', 'fuelLogs', 'maintLogs', 'dayStatuses', 'submissions', 'operationSessions', 'inspections', 'faultReports', 'equipmentDocs', 'aiImageAnalyses', 'aiCorrections'];
   }
 
-  function walkPhotoFields(db, visitor) {
+  function walkPhotoFields(db, visitor, options = {}) {
     (db.dailyLogs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
     (db.workLogs || []).forEach(item => {
       const list = Array.isArray(item.photos) ? item.photos : (item.photo ? [item.photo] : []);
@@ -135,6 +135,9 @@
     (db.inspections || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
     (db.faultReports || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
     (db.equipmentDocs || []).forEach(item => visitor(item, 'photo', item.photo, (next) => { item.photo = next; }));
+    if (options.includeAnalysisRefs !== false) {
+      (db.aiImageAnalyses || []).forEach(item => visitor(item, 'photoRef', item.photoRef, (next) => { item.photoRef = next; }));
+    }
   }
 
   function isPhotoRef(value) {
@@ -148,30 +151,31 @@
   async function extractPhotosForPersist(db) {
     const photoPuts = [];
     const usedIds = new Set();
-    const tasks = [];
+    const groups = new Map();
     walkPhotoFields(db, (owner, field, value, setValue) => {
       if (!value) return;
       if (isPhotoRef(value)) {
         usedIds.add(photoIdFromRef(value));
         return;
       }
-      tasks.push((async () => {
-        const blob = await blobFromDisplayValue(value);
-        if (!blob) return;
-        const id = uid('photo');
-        usedIds.add(id);
-        photoPuts.push({
-          id,
-          blob,
-          mime: blob.type || 'image/jpeg',
-          createdAt: owner.createdAt || owner.updatedAt || owner.completedAt || owner.occurredAt || new Date().toISOString(),
-          ownerType: field,
-          ownerId: owner.id || ''
-        });
-        setValue(`photo:${id}`);
-      })());
+      if (!groups.has(value)) groups.set(value, { owner, field, setters: [] });
+      groups.get(value).setters.push(setValue);
     });
-    await Promise.all(tasks);
+    await Promise.all([...groups.entries()].map(async ([value, group]) => {
+      const blob = await blobFromDisplayValue(value);
+      if (!blob) return;
+      const id = uid('photo');
+      usedIds.add(id);
+      photoPuts.push({
+        id,
+        blob,
+        mime: blob.type || 'image/jpeg',
+        createdAt: group.owner.createdAt || group.owner.updatedAt || group.owner.completedAt || group.owner.occurredAt || new Date().toISOString(),
+        ownerType: group.field,
+        ownerId: group.owner.id || ''
+      });
+      group.setters.forEach(setValue => setValue(`photo:${id}`));
+    }));
     return { photoPuts, usedIds };
   }
 
@@ -180,7 +184,7 @@
     const refs = [];
     walkPhotoFields(db, (owner, field, value) => {
       if (isPhotoRef(value)) refs.push(photoIdFromRef(value));
-    });
+    }, { includeAnalysisRefs: false });
     const unique = [...new Set(refs.filter(Boolean))];
     const blobs = new Map();
     await Promise.all(unique.map(async id => {
@@ -197,7 +201,7 @@
         return;
       }
       hydrateTasks.push(materializePhotoRef(id, blob).then(url => setValue(url)));
-    });
+    }, { includeAnalysisRefs: false });
     await Promise.all(hydrateTasks);
     return db;
   }
@@ -569,6 +573,10 @@
   let pendingUsagePhoto = null;
   let usageCropRect = { x: 0.06, y: 0.38, width: 0.88, height: 0.36 };
   let usageCropStart = null;
+  let usageAiFields = {
+    hourMeter: { before: '', applied: null, status: '', candidates: [] },
+    odometer: { before: '', applied: null, status: '', candidates: [] }
+  };
   let currentWorkPhotos = [];
   let editingWorkId = null;
   let editingMaintId = null;
@@ -1476,7 +1484,7 @@
       }
     }
     SERVICE_ALERT_KEYS.forEach(key => {
-      const alert = buildServiceIntervalAlert(key);
+      const alert = buildServiceIntervalAlert(key, DB.currentEquipmentId, selectedDate());
       if (!alert) return;
       // 알림: DPF·구리스·엔진/미션/대우 오일 주기 표시 (입력 폼이 아님)
       const show = alert.level === 'warn' || alert.level === 'none' || alert.level === 'ok';
@@ -1827,6 +1835,7 @@
     $('inp-memo').value = existing?.memo || '';
     currentUsagePhoto = existing?.photo || null;
     currentUsageAnalysis = null;
+    resetUsageAiFields();
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
     setUsageAiPanel();
     renderDayStatusControls();
@@ -1961,7 +1970,7 @@
     });
   }
 
-  function setUsageAiPanel(title = '', detail = '', warning = false) {
+  function setUsageAiPanel(title = '', detail = '', warning = false, dateLine = '') {
     const panel = $('usage-ai-panel');
     if (!title) {
       panel.classList.add('hidden');
@@ -1970,22 +1979,104 @@
     $('usage-ai-title').textContent = title;
     $('usage-ai-detail').textContent = detail;
     $('usage-ai-detail').classList.toggle('warning', warning);
+    const dateEl = $('usage-ai-date');
+    if (dateEl) {
+      dateEl.textContent = dateLine;
+      dateEl.classList.toggle('hidden', !dateLine);
+    }
     panel.classList.remove('hidden');
   }
 
+  function usageAiHintId(field) {
+    return field === 'hourMeter' ? 'hm-ai-status' : 'odo-ai-status';
+  }
+
+  function setFieldAiHint(field, text = '계기판 표시값', kind = '') {
+    const el = $(usageAiHintId(field));
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('ai-applied', kind === 'auto');
+    el.classList.toggle('ai-review', kind === 'review');
+    el.classList.toggle('ai-user', kind === 'user');
+  }
+
+  function resetUsageAiFields() {
+    usageAiFields = {
+      hourMeter: { before: '', applied: null, status: '', candidates: [] },
+      odometer: { before: '', applied: null, status: '', candidates: [] }
+    };
+    setFieldAiHint('hourMeter');
+    setFieldAiHint('odometer');
+  }
+
+  function uniqueAnalysisNumbers(values) {
+    const seen = new Set();
+    const list = [];
+    (Array.isArray(values) ? values : [values]).forEach(value => {
+      const number = analysisNumber(value);
+      if (number == null || seen.has(number)) return;
+      seen.add(number);
+      list.push(number);
+    });
+    return list;
+  }
+
+  function handleUsageFieldInput(field) {
+    updateUsagePreview();
+    const input = $(field === 'hourMeter' ? 'inp-hm' : 'inp-odo');
+    const state = usageAiFields[field];
+    if (!input || !state || (!state.status && state.applied == null)) return;
+    const raw = input.value.trim();
+    if (raw === '') {
+      input.value = state.before;
+      state.applied = null;
+      state.status = '';
+      setFieldAiHint(field);
+      updateUsagePreview();
+      return;
+    }
+    const value = analysisNumber(raw);
+    if (state.applied != null && value === state.applied) {
+      if (state.status === 'auto') setFieldAiHint(field, 'AI 자동입력', 'auto');
+      else if (state.status === 'review') setFieldAiHint(field, '확인 필요', 'review');
+      return;
+    }
+    if (state.applied != null && value != null && value !== state.applied) {
+      setFieldAiHint(field, '사용자 수정', 'user');
+    }
+  }
+
+  function usageCropImageBox() {
+    const stage = $('usage-crop-stage').getBoundingClientRect();
+    const image = $('usage-crop-image');
+    const naturalWidth = image.naturalWidth || 1;
+    const naturalHeight = image.naturalHeight || 1;
+    const scale = Math.min(stage.width / naturalWidth, stage.height / naturalHeight);
+    const width = naturalWidth * scale;
+    const height = naturalHeight * scale;
+    return {
+      left: stage.left + (stage.width - width) / 2,
+      top: stage.top + (stage.height - height) / 2,
+      width,
+      height
+    };
+  }
+
   function renderUsageCropSelection() {
+    const stage = $('usage-crop-stage').getBoundingClientRect();
+    const box = usageCropImageBox();
     const selection = $('usage-crop-selection');
-    selection.style.left = `${usageCropRect.x * 100}%`;
-    selection.style.top = `${usageCropRect.y * 100}%`;
-    selection.style.width = `${usageCropRect.width * 100}%`;
-    selection.style.height = `${usageCropRect.height * 100}%`;
+    selection.style.left = `${box.left - stage.left + usageCropRect.x * box.width}px`;
+    selection.style.top = `${box.top - stage.top + usageCropRect.y * box.height}px`;
+    selection.style.width = `${usageCropRect.width * box.width}px`;
+    selection.style.height = `${usageCropRect.height * box.height}px`;
   }
 
   function usageCropPoint(event) {
-    const rect = $('usage-crop-stage').getBoundingClientRect();
+    const box = usageCropImageBox();
     return {
-      x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
-      y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height))
+      x: Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - box.top) / box.height))
     };
   }
 
@@ -2028,33 +2119,85 @@
     return Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
   }
 
+  function applyMeterSuggestion(field, value, confidence, needsReview, candidates) {
+    const input = $(field === 'hourMeter' ? 'inp-hm' : 'inp-odo');
+    const state = usageAiFields[field];
+    const score = numberOr(confidence, 0);
+    const ambiguous = candidates.length > 1;
+    state.before = input.value;
+    state.candidates = candidates;
+    state.applied = null;
+    const shouldFill = !needsReview && !ambiguous && value != null && score >= 75;
+    if (shouldFill) {
+      input.value = value;
+      state.applied = value;
+      if (score >= 95) {
+        state.status = 'auto';
+        setFieldAiHint(field, 'AI 자동입력', 'auto');
+      } else {
+        state.status = 'review';
+        setFieldAiHint(field, '확인 필요', 'review');
+      }
+      const unit = field === 'hourMeter' ? 'h' : 'km';
+      const label = field === 'hourMeter' ? '시간계' : '거리계';
+      return { filled: true, text: `${label} ${formatNumber(value)} ${unit}` };
+    }
+    const candidateText = candidates.length
+      ? `후보 ${candidates.map(item => formatNumber(item)).join(' / ')} · 직접 입력하거나 다시 촬영해주세요.`
+      : '숫자를 확실히 읽지 못했습니다. 직접 입력하거나 다시 촬영해주세요.';
+    state.status = 'hold';
+    setFieldAiHint(field, candidateText, 'review');
+    return { filled: false, text: candidateText };
+  }
+
   function applyUsageAnalysis(result) {
     const fields = result?.fields || {};
     const confidence = result?.fieldConfidence || {};
     const baseline = getBaseline(selectedDate());
-    const suggestions = [];
     const warnings = [];
-    let hourNeedsReview = Boolean(result?.needsReview);
-    let odometerNeedsReview = Boolean(result?.needsReview);
     const hourMeter = analysisNumber(fields.hourMeter);
     const odometer = analysisNumber(fields.odometer);
+    const hourCandidates = uniqueAnalysisNumbers([...(result?.hourMeterCandidates || []), hourMeter]);
+    const odometerCandidates = uniqueAnalysisNumbers([...(result?.odometerCandidates || []), odometer]);
+    let hourNeedsReview = Boolean(result?.needsReview) || hourCandidates.length > 1;
+    let odometerNeedsReview = Boolean(result?.needsReview) || odometerCandidates.length > 1;
 
     if (hourMeter != null) {
       if (baseline && hourMeter < numberOr(baseline.hourMeter)) { hourNeedsReview = true; warnings.push('시간계가 이전 기록보다 작습니다.'); }
       if (baseline && hourMeter - numberOr(baseline.hourMeter) > 24) { hourNeedsReview = true; warnings.push('당일 사용시간이 24시간을 넘습니다.'); }
-      if (!hourNeedsReview && numberOr(confidence.hourMeter) >= 75) { $('inp-hm').value = hourMeter; suggestions.push(`시간계 ${formatNumber(hourMeter)} h`); }
     }
     if (odometer != null) {
       if (baseline && odometer < numberOr(baseline.odometer)) { odometerNeedsReview = true; warnings.push('거리계가 이전 기록보다 작습니다.'); }
-      if (!odometerNeedsReview && numberOr(confidence.odometer) >= 75) { $('inp-odo').value = odometer; suggestions.push(`거리계 ${formatNumber(odometer)} km`); }
     }
+    if (hourCandidates.length > 1) warnings.push('시간계 후보가 둘 이상입니다.');
+    if (odometerCandidates.length > 1) warnings.push('거리계 후보가 둘 이상입니다.');
+
+    const hourResult = applyMeterSuggestion('hourMeter', hourMeter, confidence.hourMeter, hourNeedsReview, hourCandidates);
+    const odometerResult = applyMeterSuggestion('odometer', odometer, confidence.odometer, odometerNeedsReview, odometerCandidates);
     const displayDate = isDateString(fields.displayDate) ? fields.displayDate : '';
-    if (displayDate && displayDate !== selectedDate()) warnings.push(`사진 날짜 ${displayDate}는 선택한 기록 날짜와 다릅니다.`);
+    const dateMismatch = Boolean(displayDate && displayDate !== selectedDate());
+    if (dateMismatch) warnings.push('사진 날짜와 기록 날짜가 다릅니다.');
+    const dateLine = displayDate
+      ? (dateMismatch ? `사진 날짜 ${displayDate} · 사진 날짜와 기록 날짜가 다릅니다` : `사진 날짜 ${displayDate} · 선택한 기록 날짜와 일치`)
+      : '';
     const needsReview = hourNeedsReview || odometerNeedsReview;
-    currentUsageAnalysis = { id: uid('analysis'), fields: { hourMeter, odometer, displayDate }, fieldConfidence: confidence, rawText: String(result?.rawText || ''), needsReview };
+    const suggestions = [hourResult.filled ? hourResult.text : '', odometerResult.filled ? odometerResult.text : ''].filter(Boolean);
+    currentUsageAnalysis = {
+      id: uid('analysis'),
+      fields: { hourMeter, odometer, displayDate },
+      fieldConfidence: confidence,
+      rawText: String(result?.rawText || ''),
+      needsReview
+    };
     updateUsagePreview();
-    if (suggestions.length) setUsageAiPanel(needsReview ? 'AI 분석 결과 · 확인 필요' : 'AI 자동입력 완료', `${suggestions.join(' · ')}${warnings.length ? ` · ${warnings.join(' ')}` : ''}`, needsReview || warnings.length > 0);
-    else setUsageAiPanel('AI 분석 결과 · 직접 확인 필요', warnings.join(' ') || '숫자를 확실히 읽지 못했습니다. 직접 입력하거나 다시 촬영해주세요.', true);
+    const holdNotes = [hourResult.filled ? '' : hourResult.text, odometerResult.filled ? '' : odometerResult.text].filter(Boolean);
+    const detail = [suggestions.join(' · '), warnings.join(' '), holdNotes.join(' ')].filter(Boolean).join(' · ');
+    const reviewTitle = usageAiFields.hourMeter.status === 'review' || usageAiFields.odometer.status === 'review' || needsReview || dateMismatch;
+    if (suggestions.length) {
+      setUsageAiPanel(reviewTitle ? 'AI 분석 결과 · 확인 필요' : 'AI 자동입력 완료', detail, reviewTitle, dateLine);
+    } else {
+      setUsageAiPanel('AI 분석 결과 · 직접 확인 필요', detail || '숫자를 확실히 읽지 못했습니다. 직접 입력하거나 다시 촬영해주세요.', true, dateLine);
+    }
   }
 
   async function analyzeUsagePhoto(photo) {
@@ -2078,10 +2221,15 @@
     }
   }
 
-  async function applyUsagePhoto(photo) {
+  async function applyUsagePhoto(photo, options = {}) {
     currentUsagePhoto = photo;
     currentUsageAnalysis = null;
+    resetUsageAiFields();
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
+    if (options.analyze === false) {
+      setUsageAiPanel('사진만 저장됩니다', '자르기를 취소해 원본 사진을 유지했습니다. 시간계·거리계는 직접 입력하세요.', true);
+      return;
+    }
     await analyzeUsagePhoto(currentUsagePhoto);
   }
 
@@ -2111,6 +2259,7 @@
       if (analysis) {
         next.aiImageAnalyses.push({
           id: analysis.id, equipmentId: record.equipmentId, usageRecordId: record.id, recordType: 'usage',
+          photoRef: record.photo || '',
           rawText: analysis.rawText, extractedData: analysis.fields, fieldConfidence: analysis.fieldConfidence,
           needsReview: analysis.needsReview, userConfirmed: true, createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString()
         });
@@ -3772,8 +3921,8 @@
       updateDayBadge();
       if (currentMode === 'admin') loadAdminDashboard(); else refreshActiveTab();
     });
-    $('inp-hm').addEventListener('input', updateUsagePreview);
-    $('inp-odo').addEventListener('input', updateUsagePreview);
+    $('inp-hm').addEventListener('input', () => handleUsageFieldInput('hourMeter'));
+    $('inp-odo').addEventListener('input', () => handleUsageFieldInput('odometer'));
     $('btn-save-usage').addEventListener('click', saveUsage);
     $('btn-day-holiday').addEventListener('click', () => markDayStatus('holiday'));
     $('btn-day-no-operation').addEventListener('click', () => markDayStatus('no-operation'));
@@ -3796,6 +3945,7 @@
     $('btn-usage-photo-remove').addEventListener('click', () => {
       currentUsagePhoto = null;
       currentUsageAnalysis = null;
+      resetUsageAiFields();
       showPhotoPreview('usage-photo-preview', 'usage-photo-img', null);
       setUsageAiPanel();
     });
@@ -3818,16 +3968,26 @@
         await applyUsagePhoto(cropped);
       } catch (error) { showToast(error.message); }
     });
-    $('btn-usage-crop-original').addEventListener('click', async () => {
+    $('btn-usage-crop-reset').addEventListener('click', () => {
+      usageCropRect = { x: 0, y: 0, width: 1, height: 1 };
+      renderUsageCropSelection();
+    });
+    $('btn-usage-crop-reselect').addEventListener('click', () => {
+      closeUsageCropper();
+      openPhotoSourcePicker('inp-usage-photo');
+    });
+    $('btn-usage-crop-cancel').addEventListener('click', async () => {
       const source = pendingUsagePhoto;
+      closeUsageCropper();
       if (!source) return;
       try {
-        const compressed = await compressImageDataUrl(source);
-        closeUsageCropper();
-        await applyUsagePhoto(compressed);
+        const original = await compressImageDataUrl(source);
+        await applyUsagePhoto(original, { analyze: false });
       } catch (error) { showToast(error.message); }
     });
-    $('btn-usage-crop-cancel').addEventListener('click', closeUsageCropper);
+    window.addEventListener('resize', () => {
+      if (!$('usage-crop-modal')?.classList.contains('hidden')) renderUsageCropSelection();
+    });
     $('btn-work-photo-pick').addEventListener('click', () => openPhotoSourcePicker('inp-work-photo'));
     $('inp-work-photo').addEventListener('change', async event => {
       const files = Array.from(event.target.files || []);
