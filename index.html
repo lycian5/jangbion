@@ -68,7 +68,15 @@
     }
     body.has-sponsor-banner { padding-bottom:140px; }
     .equipment-docs { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
-    .equipment-docs-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px; }
+    .equipment-docs-toggle {
+      width:100%; display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+      margin:0 0 8px; padding:0; border:0; background:transparent; text-align:left; cursor:pointer; font:inherit;
+    }
+    .equipment-docs-caret {
+      flex-shrink:0; min-width:58px; min-height:28px; padding:4px 8px; border-radius:8px;
+      background:#f1f5f9; color:var(--sub); font-size:.7rem; font-weight:800; text-align:center;
+    }
+    .equipment-docs-body.hidden { display:none; }
     .doc-row {
       display:flex; align-items:center; gap:10px; padding:10px 0;
       border-bottom:1px solid var(--border);
@@ -488,6 +496,15 @@
 
     .record-service-card { margin-bottom:12px; }
     .more-menu-group .btn { margin-top:8px; }
+    .btn-more-storage { background:linear-gradient(135deg,#0D1B3D,#155e75); color:#fff; }
+    .btn-more-photos { background:linear-gradient(135deg,#ea580c,#c2410c); color:#fff; }
+    .btn-more-backup { background:linear-gradient(135deg,#059669,#047857); color:#fff; }
+    .btn-more-kakao { background:linear-gradient(135deg,#f5c518,#d4a017); color:#1c1917; }
+    .btn-more-font { background:linear-gradient(135deg,#7c3aed,#5b21b6); color:#fff; }
+    .btn-more-version { background:linear-gradient(135deg,#334155,#1e293b); color:#fff; }
+    .btn-more-install { background:linear-gradient(135deg,#0284c7,#0369a1); color:#fff; }
+    .btn-more-plan { background:linear-gradient(135deg,#FF6A00,#ea580c); color:#fff; }
+    body:not(.secret-mode) .secret-only { display:none !important; }
     .data-settings-panel { margin-top:8px; }
     .data-settings-panel.is-hidden { display:none !important; }
 
@@ -509,6 +526,7 @@
     .activity-detail { margin-top:3px; color:var(--sub); font-size:.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .activity-time { color:var(--sub); font-size:.72rem; font-variant-numeric:tabular-nums; }
     .work-records { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+    .work-records.is-top { margin-top:0; margin-bottom:14px; padding-top:0; border-top:0; }
     .work-records-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
     .work-records-title { font-size:.88rem; font-weight:900; }
     .work-record-list { display:flex; flex-direction:column; gap:8px; }
@@ -751,8 +769,8 @@
           <img id="usage-photo-img" alt="계기판 사진">
           <button class="photo-remove-btn" id="btn-usage-photo-remove" type="button" aria-label="계기판 사진 삭제">×</button>
         </div>
-        <p class="hint" id="usage-ai-privacy">자르기 적용 시 자른 계기판 사진만 분석 서버로 보내 시간계·거리계를 읽습니다. 분석 결과는 바로 저장되지 않으며, 기록은 직접 확인한 뒤 저장합니다. 자르기를 취소하면 원본 사진을 유지하고 분석하지 않습니다. 사진은 제3자 AI로 전송될 수 있고, 분석 이력·수정값은 학습에 쓰지 않습니다.</p>
-        <div class="ai-analysis-panel hidden" id="usage-ai-panel" aria-live="polite">
+        <p class="hint secret-only" id="usage-ai-privacy">자르기 적용 시 자른 계기판 사진만 분석 서버로 보내 시간계·거리계를 읽습니다. 분석 결과는 바로 저장되지 않으며, 기록은 직접 확인한 뒤 저장합니다. 자르기를 취소하면 원본 사진을 유지하고 분석하지 않습니다. 사진은 제3자 AI로 전송될 수 있고, 분석 이력·수정값은 학습에 쓰지 않습니다.</p>
+        <div class="ai-analysis-panel hidden secret-only" id="usage-ai-panel" aria-live="polite">
           <div class="ai-analysis-title" id="usage-ai-title"></div>
           <div class="ai-analysis-detail" id="usage-ai-detail"></div>
           <div class="ai-analysis-date hidden" id="usage-ai-date"></div>
@@ -774,6 +792,14 @@
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-clipboard"></use></svg>작업 기록</div>
 
+      <div class="work-records is-top">
+        <div class="work-records-head">
+          <span class="work-records-title">당일 작업 목록</span>
+          <button class="work-record-edit" id="btn-new-work" type="button">새 작업 추가</button>
+        </div>
+        <div class="work-record-list" id="work-record-list"></div>
+      </div>
+
       <div class="work-field-tools"><button class="work-record-edit" id="btn-work-field-settings" type="button">입력칸 설정</button></div>
       <div class="work-field-settings hidden" id="work-field-settings" aria-label="작업 입력칸 설정"></div>
       <div class="work-form-fields" id="work-form-fields">
@@ -789,14 +815,6 @@
       </div>
 
       <button class="btn btn-success" id="btn-save-work">작업 기록 저장</button>
-
-      <div class="work-records">
-        <div class="work-records-head">
-          <span class="work-records-title">당일 작업 목록</span>
-          <button class="work-record-edit" id="btn-new-work" type="button">새 작업 추가</button>
-        </div>
-        <div class="work-record-list" id="work-record-list"></div>
-      </div>
     </div>
   </div>
 
@@ -850,7 +868,7 @@
   <div class="tab-panel" id="tab-maint">
     <div class="card">
       <div class="card-title"><svg class="ui-icon small" aria-hidden="true"><use href="#icon-wrench"></use></svg>정비 기록</div>
-      <div class="work-records" style="margin-bottom:14px;">
+      <div class="work-records is-top">
         <div class="work-records-head">
           <span class="work-records-title">당일 정비 목록</span>
           <button class="work-record-edit" id="btn-new-maint" type="button">새 정비 추가</button>
@@ -1099,20 +1117,20 @@
     <p class="modal-hint">데이터·표시·앱 설정은 여기에서 관리합니다. 장비 등록·수정은 하단 「장비」 탭을 사용하세요.</p>
     <div class="more-menu-group">
       <div class="plan-feature-title" style="margin:8px 0 6px;">데이터</div>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('storage')">저장 및 용량</button>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('photos')">사진 정리</button>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('backup')">백업 · 복원</button>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('kakao')">카카오 제출방</button>
+      <button class="btn btn-more-storage" type="button" onclick="closeMoreMenu();openDataSettings('storage')">저장 및 용량</button>
+      <button class="btn btn-more-photos" type="button" onclick="closeMoreMenu();openDataSettings('photos')">사진 정리</button>
+      <button class="btn btn-more-backup" type="button" onclick="closeMoreMenu();openDataSettings('backup')">백업 · 복원</button>
+      <button class="btn btn-more-kakao" type="button" onclick="closeMoreMenu();openDataSettings('kakao')">카카오 제출방</button>
     </div>
     <div class="more-menu-group">
       <div class="plan-feature-title" style="margin:12px 0 6px;">표시</div>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('font')">글자 크기</button>
+      <button class="btn btn-more-font" type="button" onclick="closeMoreMenu();openDataSettings('font')">글자 크기</button>
     </div>
     <div class="more-menu-group">
       <div class="plan-feature-title" style="margin:12px 0 6px;">앱 · 안내</div>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openDataSettings('version')">버전 · 업데이트</button>
-      <button class="btn btn-fuel" id="install-header-button" type="button" onclick="closeMoreMenu();openInstallGuide()">홈 화면에 설치</button>
-      <button class="btn btn-fuel" type="button" onclick="closeMoreMenu();openFreePlanGuide('details')">무료 플랜 안내</button>
+      <button class="btn btn-more-version" type="button" onclick="closeMoreMenu();openDataSettings('version')">버전 · 업데이트</button>
+      <button class="btn btn-more-install" id="install-header-button" type="button" onclick="closeMoreMenu();openInstallGuide()">홈 화면에 설치</button>
+      <button class="btn btn-more-plan" type="button" onclick="closeMoreMenu();openFreePlanGuide('details')">무료 플랜 안내</button>
       <button class="btn btn-admin-mode" type="button" onclick="closeMoreMenu();switchMode('admin')">통합관리 모드</button>
     </div>
     <button class="btn btn-plain" type="button" onclick="closeMoreMenu()">닫기</button>
@@ -1187,17 +1205,20 @@
       <div id="equipment-service-interval-alerts" class="service-interval-alerts service-interval-alerts-record" aria-live="polite"></div>
     </div>
     <div class="equipment-docs" id="equipment-docs-section">
-      <div class="equipment-docs-head">
+      <button class="equipment-docs-toggle" id="btn-toggle-equipment-docs" type="button" aria-expanded="false" aria-controls="equipment-docs-body">
         <div>
           <div class="submission-title">구비 서류</div>
-          <p class="hint" style="margin:4px 0 0;">현장 입장·안전교육용 서류를 이미지로 보관합니다. 선택 후 공유로 문자·카톡 등에 보낼 수 있습니다.</p>
+          <p class="hint" style="margin:4px 0 0;">현장 입장·안전교육용 서류를 이미지로 보관합니다. 필요할 때만 펼치세요.</p>
         </div>
-      </div>
-      <div id="equipment-docs-list"></div>
-      <input type="file" id="inp-equipment-doc" accept="image/*" style="display:none">
-      <div class="input-row" style="margin-top:12px;">
-        <button class="btn btn-primary" type="button" id="btn-share-equipment-docs">선택 서류 공유</button>
-        <button class="btn btn-plain" type="button" id="btn-clear-doc-selection">선택 해제</button>
+        <span class="equipment-docs-caret" id="equipment-docs-caret">펼치기</span>
+      </button>
+      <div id="equipment-docs-body" class="equipment-docs-body hidden">
+        <div id="equipment-docs-list"></div>
+        <input type="file" id="inp-equipment-doc" accept="image/*" style="display:none">
+        <div class="input-row" style="margin-top:12px;">
+          <button class="btn btn-primary" type="button" id="btn-share-equipment-docs">선택 서류 공유</button>
+          <button class="btn btn-plain" type="button" id="btn-clear-doc-selection">선택 해제</button>
+        </div>
       </div>
     </div>
 
@@ -1244,7 +1265,7 @@
         </div>
         <button class="btn btn-plain" type="button" id="btn-check-update" style="width:auto;min-height:36px;padding:8px 12px;font-size:.78rem;">업데이트 확인</button>
       </div>
-      <p class="hint">계기판 사진 분석은 자른 사진을 제3자 AI로 보내 시간계·거리계만 제안합니다. 분석 결과는 바로 저장되지 않고, 분석 이력·수정값은 학습에 쓰지 않습니다. 키와 공급자 정보는 브라우저에 두지 않습니다.</p>
+      <p class="hint secret-only">계기판 사진 분석은 자른 사진을 제3자 AI로 보내 시간계·거리계만 제안합니다. 분석 결과는 바로 저장되지 않고, 분석 이력·수정값은 학습에 쓰지 않습니다. 키와 공급자 정보는 브라우저에 두지 않습니다.</p>
     </div>
 
     <div id="data-panel-font" class="data-settings-panel">
@@ -1963,6 +1984,6 @@
   updateAppTitle();
   loadSummary();
 </script>
-<script src="./app.js?v=3.6.5"></script>
+<script src="./app.js?v=3.6.6"></script>
 </body>
 </html>

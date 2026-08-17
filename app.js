@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.5';
+  const APP_VERSION = '3.6.6';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -16,6 +16,7 @@
   const PHOTO_RETENTION_KEY = 'jangbion_photo_retention_days';
   const BACKUP_REMINDER_KEY = 'jangbion_last_backup_at';
   const WORK_FIELD_LAYOUT_KEY = 'jangbion_work_field_layout_v1';
+  const SECRET_MODE_KEY = 'jangbion_secret_mode_v1';
   const DEFAULT_PHOTO_RETENTION_DAYS = 90;
   const DAYS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
@@ -1970,8 +1971,42 @@
     });
   }
 
+  function isSecretMode() {
+    try { return localStorage.getItem(SECRET_MODE_KEY) === '1'; }
+    catch (error) { return false; }
+  }
+
+  function applySecretModeUi() {
+    document.body.classList.toggle('secret-mode', isSecretMode());
+    if (!isSecretMode()) setUsageAiPanel();
+  }
+
+  function setSecretMode(on, options = {}) {
+    const next = Boolean(on);
+    if (isSecretMode() === next) {
+      applySecretModeUi();
+      return;
+    }
+    try { localStorage.setItem(SECRET_MODE_KEY, next ? '1' : '0'); }
+    catch (error) { /* ignore */ }
+    applySecretModeUi();
+    updateAppVersionLabel();
+    if (options.silent) return;
+    showToast(next ? '시크릿 모드를 켰습니다. AI 계기판 분석은 이 기기에서만 사용합니다.' : '시크릿 모드를 껐습니다.');
+  }
+
+  function consumeSecretQuery() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('secret')) return;
+    setSecretMode(params.get('secret') === '1', { silent: true });
+    params.delete('secret');
+    const next = `${location.pathname}${params.toString() ? `?${params}` : ''}${location.hash}`;
+    history.replaceState({}, '', next);
+  }
+
   function setUsageAiPanel(title = '', detail = '', warning = false, dateLine = '') {
     const panel = $('usage-ai-panel');
+    if (!panel) return;
     if (!title) {
       panel.classList.add('hidden');
       return;
@@ -2201,6 +2236,7 @@
   }
 
   async function analyzeUsagePhoto(photo) {
+    if (!isSecretMode()) return;
     if (!navigator.onLine) return setUsageAiPanel('사진 분석을 사용할 수 없습니다', '오프라인 상태입니다. 사진은 저장되고 직접 입력할 수 있습니다.', true);
     setUsageAiPanel('계기판 숫자 확인 중…', '시간계와 거리계를 분석하고 있습니다.');
     const controller = new AbortController();
@@ -2226,8 +2262,10 @@
     currentUsageAnalysis = null;
     resetUsageAiFields();
     showPhotoPreview('usage-photo-preview', 'usage-photo-img', currentUsagePhoto);
-    if (options.analyze === false) {
-      setUsageAiPanel('사진만 저장됩니다', '자르기를 취소해 원본 사진을 유지했습니다. 시간계·거리계는 직접 입력하세요.', true);
+    if (options.analyze === false || !isSecretMode()) {
+      if (isSecretMode() && options.analyze === false) {
+        setUsageAiPanel('사진만 저장됩니다', '자르기를 취소해 원본 사진을 유지했습니다. 시간계·거리계는 직접 입력하세요.', true);
+      }
       return;
     }
     await analyzeUsagePhoto(currentUsagePhoto);
@@ -3791,7 +3829,10 @@
   function updateAppVersionLabel(extra = '') {
     const el = $('app-version-text');
     if (!el) return;
-    el.textContent = extra ? `v${APP_VERSION} · ${extra}` : `v${APP_VERSION}`;
+    const bits = [`v${APP_VERSION}`];
+    if (isSecretMode()) bits.push('시크릿');
+    if (extra) bits.push(extra);
+    el.textContent = bits.join(' · ');
   }
 
   function showAppUpdateNotice() {
@@ -3939,7 +3980,8 @@
           reader.onerror = () => reject(new Error('사진을 불러오지 못했습니다.'));
           reader.readAsDataURL(file);
         });
-        openUsageCropper(source);
+        if (isSecretMode()) openUsageCropper(source);
+        else await applyUsagePhoto(await compressImageDataUrl(source), { analyze: false });
       } catch (error) { showToast(error.message); }
     });
     $('btn-usage-photo-remove').addEventListener('click', () => {
@@ -4037,6 +4079,29 @@
     $('trend-type').addEventListener('change', event => { usageTrendType = event.target.value; renderUsageTrend(); });
     $('btn-apply-update')?.addEventListener('click', applyAppUpdate);
     $('btn-check-update')?.addEventListener('click', () => checkForAppUpdate({ silent: false }));
+    let secretTapCount = 0;
+    let secretTapTimer = 0;
+    $('app-version-row')?.addEventListener('click', event => {
+      if (event.target.closest('#btn-check-update')) return;
+      clearTimeout(secretTapTimer);
+      secretTapCount += 1;
+      if (secretTapCount >= 7) {
+        secretTapCount = 0;
+        setSecretMode(!isSecretMode());
+        return;
+      }
+      secretTapTimer = window.setTimeout(() => { secretTapCount = 0; }, 1800);
+    });
+    $('btn-toggle-equipment-docs')?.addEventListener('click', () => {
+      const body = $('equipment-docs-body');
+      const caret = $('equipment-docs-caret');
+      const button = $('btn-toggle-equipment-docs');
+      if (!body || !button) return;
+      const open = body.classList.contains('hidden');
+      body.classList.toggle('hidden', !open);
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (caret) caret.textContent = open ? '접기' : '펼치기';
+    });
     $('history-type').addEventListener('change', loadHistoryTab);
     $('history-month').addEventListener('change', loadHistoryTab);
     $('admin-history-equipment').addEventListener('change', renderAdminHistory);
@@ -4051,6 +4116,8 @@
 
   function initialize() {
     applyFontSize(getFontSize());
+    consumeSecretQuery();
+    applySecretModeUi();
     bindFontSizeControls();
     $('dateSelect').value = localDateString();
     $('history-month').value = localDateString().slice(0, 7);
