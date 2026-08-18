@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.8';
+  const APP_VERSION = '3.6.9';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -1340,7 +1340,8 @@
     missionOil: { type: '미션오일 교환', label: '미션오일', home: false, record: true, alert: true },
     hydraulicOil: { type: '대우오일 교환', label: '대우오일', home: false, record: true, alert: true },
     filter: { type: '필터 교환', label: '필터 교환', home: false, record: true, alert: true },
-    tireReplace: { type: '타이어 교체', label: '타이어 교체', home: false, record: true, alert: true }
+    tireFront: { type: '앞타이어 교체', label: '앞타이어', home: false, record: true, alert: true },
+    tireRear: { type: '뒷타이어 교체', label: '뒷타이어', home: false, record: true, alert: true }
   };
   const SERVICE_HOME_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].home);
   const SERVICE_RECORD_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].record);
@@ -2535,7 +2536,18 @@
     }));
   }
 
+  function ensureMaintTypeOption(type) {
+    const select = $('inp-maint-type');
+    if (!select || !type) return;
+    if ([...select.options].some(option => option.value === type)) return;
+    const option = document.createElement('option');
+    option.value = type;
+    option.textContent = type;
+    select.append(option);
+  }
+
   function fillMaintForm(record = null) {
+    ensureMaintTypeOption(record?.type);
     $('inp-maint-type').value = record?.type || '';
     $('inp-maint-detail').value = record?.detail || '';
     $('inp-maint-manager').value = record?.manager || '';
