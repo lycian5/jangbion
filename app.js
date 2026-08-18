@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.6';
+  const APP_VERSION = '3.6.7';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -1334,11 +1334,21 @@
 
 
   const SERVICE_TRACK_TYPES = {
-    dpf: { type: 'DPF 후처리', label: 'DPF 후처리', unitHint: '운행시간·거리', home: true, record: true, alert: true },
-    grease: { type: '구리스 주입', label: '구리스 주입', unitHint: '운행시간·거리', home: true, record: true, alert: true },
-    engineOil: { type: '엔진오일 교환', label: '엔진오일', unitHint: '운행시간·거리', home: false, record: true, alert: true },
-    missionOil: { type: '미션오일 교환', label: '미션오일', unitHint: '운행시간·거리', home: false, record: true, alert: true },
-    hydraulicOil: { type: '대우오일 교환', label: '대우오일', unitHint: '운행시간·거리', home: false, record: true, alert: true }
+    dailyInspection: { type: '일일점검', label: '일일점검', home: false, record: true, alert: true },
+    periodicInspection: { type: '정기점검', label: '정기점검', home: false, record: true, alert: true },
+    engineOil: { type: '엔진오일 교환', label: '엔진오일', home: false, record: true, alert: true },
+    missionOil: { type: '미션오일 교환', label: '미션오일', home: false, record: true, alert: true },
+    hydraulicOil: { type: '대우오일 교환', label: '대우오일', home: false, record: true, alert: true },
+    filter: { type: '필터 교환', label: '필터 교환', home: false, record: true, alert: true },
+    dpf: { type: 'DPF 후처리', label: 'DPF 후처리', home: true, record: true, alert: true },
+    grease: { type: '구리스 주입', label: '구리스 주입', home: true, record: true, alert: true },
+    tireReplace: { type: '타이어 교체', label: '타이어 교체', home: false, record: true, alert: true },
+    tirePuncture: { type: '타이어 펑크 수리', label: '타이어 펑크', home: false, record: true, alert: true },
+    battery: { type: '배터리 점검', label: '배터리 점검', home: false, record: true, alert: true },
+    brake: { type: '브레이크 점검', label: '브레이크 점검', home: false, record: true, alert: true },
+    hydraulicCheck: { type: '유압 점검', label: '유압 점검', home: false, record: true, alert: true },
+    repair: { type: '수리', label: '수리', home: false, record: true, alert: true },
+    other: { type: '기타', label: '기타', home: false, record: true, alert: true }
   };
   const SERVICE_HOME_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].home);
   const SERVICE_RECORD_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].record);
@@ -1428,10 +1438,7 @@
       btn.type = 'button';
       const levelClass = alert.level === 'warn' ? 'warn' : alert.level === 'none' ? 'none' : 'ok';
       btn.className = `service-alert ${levelClass}`;
-      btn.onclick = () => {
-        openEquipmentManager();
-        setTimeout(() => $('equipment-service-interval-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
-      };
+      btn.onclick = () => openMaintForServiceType(SERVICE_TRACK_TYPES[alert.key]?.type);
       const title = document.createElement('div');
       title.className = 'service-alert-title';
       title.textContent = alert.title;
@@ -1454,8 +1461,16 @@
     }));
   }
 
+  function openMaintForServiceType(type) {
+    closeAlertsHub();
+    closeSettings();
+    switchTab('maint');
+    startNewMaintRecord();
+    if (type && $('inp-maint-type')) $('inp-maint-type').value = type;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function renderRecordServiceIntervalAlerts() {
-    // 장비 탭 하단: 전체 주기 상세
     renderServiceAlertList($('equipment-service-interval-alerts'), SERVICE_RECORD_KEYS, { compact: false });
   }
 
@@ -1487,7 +1502,7 @@
     SERVICE_ALERT_KEYS.forEach(key => {
       const alert = buildServiceIntervalAlert(key, DB.currentEquipmentId, selectedDate());
       if (!alert) return;
-      // 알림: DPF·구리스·엔진/미션/대우 오일 주기 표시 (입력 폼이 아님)
+      // 알림: 정비 종류별 주기 표시 (입력 폼이 아님)
       const show = alert.level === 'warn' || alert.level === 'none' || alert.level === 'ok';
       if (!show) return;
       items.push({
@@ -1496,14 +1511,7 @@
         title: `정비 주기 · ${alert.title}`,
         meta: alert.meta,
         detail: alert.detail,
-        action: () => {
-          closeAlertsHub();
-          openEquipmentManager();
-          setTimeout(() => {
-            const el = $('equipment-service-interval-alerts');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 150);
-        }
+        action: () => openMaintForServiceType(SERVICE_TRACK_TYPES[key].type)
       });
     });
     const fault = typeof blockingFault === 'function' ? blockingFault() : null;
