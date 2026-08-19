@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.9';
+  const APP_VERSION = '3.6.10';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -1340,17 +1340,32 @@
     missionOil: { type: '미션오일 교환', label: '미션오일', home: false, record: true, alert: true },
     hydraulicOil: { type: '대우오일 교환', label: '대우오일', home: false, record: true, alert: true },
     filter: { type: '필터 교환', label: '필터 교환', home: false, record: true, alert: true },
-    tireFront: { type: '앞타이어 교체', label: '앞타이어', home: false, record: true, alert: true },
-    tireRear: { type: '뒷타이어 교체', label: '뒷타이어', home: false, record: true, alert: true }
+    tireFront: { type: '앞타이어 교체', label: '앞타이어 교체', home: false, record: true, alert: true },
+    tireRear: { type: '뒷타이어 교체', label: '뒷타이어 교체', home: false, record: true, alert: true }
   };
   const SERVICE_HOME_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].home);
   const SERVICE_RECORD_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].record);
   const SERVICE_ALERT_KEYS = Object.keys(SERVICE_TRACK_TYPES).filter(key => SERVICE_TRACK_TYPES[key].alert);
+  const MAINT_TYPE_ALIASES = {
+    '앞타이어 교체': ['앞타이어 교체', '앞 타이어 교체', '앞타이어', '전타이어 교체'],
+    '뒷타이어 교체': ['뒷타이어 교체', '뒤타이어 교체', '뒷 타이어 교체', '뒤 타이어 교체', '뒷타이어', '뒤타이어', '후타이어 교체']
+  };
 
+  function normalizeMaintType(value) {
+    return String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  }
+
+  function maintTypeMatches(stored, expected) {
+    const actual = normalizeMaintType(stored);
+    const target = normalizeMaintType(expected);
+    if (!actual || !target) return false;
+    if (actual === target) return true;
+    return (MAINT_TYPE_ALIASES[target] || []).includes(actual);
+  }
 
   function lastMaintByType(type, equipmentId = DB.currentEquipmentId) {
     return logsForEquipment(DB.maintLogs, equipmentId)
-      .filter(item => item.type === type)
+      .filter(item => maintTypeMatches(item.type, type))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))[0] || null;
   }
 
@@ -1405,8 +1420,21 @@
     const dLabel = dayOffset == null ? '-' : dayOffset === 0 ? 'D+0 (당일)' : `D+${dayOffset}`;
     let level = 'ok';
     if (dayOffset != null && dayOffset >= 1 && dayOffset <= 7) level = 'warn';
-    if (dayOffset != null && dayOffset > 7) level = 'ok';
-    const meta = `${dLabel} · 운행 ${formatNumber(totals.hours, 1)}h · ${formatNumber(totals.km, 1)}km`;
+    const nextDate = isDateString(last.nextDate) ? last.nextDate : '';
+    let nextNote = '';
+    if (nextDate) {
+      const daysToNext = daysBetweenDates(asOf, nextDate);
+      if (daysToNext != null && daysToNext <= 0) {
+        level = 'warn';
+        nextNote = `다음 점검 ${nextDate} · 기한 경과`;
+      } else if (daysToNext != null && daysToNext <= 7) {
+        level = 'warn';
+        nextNote = `다음 점검 ${nextDate} · D-${daysToNext}`;
+      } else {
+        nextNote = `다음 점검 ${nextDate}`;
+      }
+    }
+    const meta = [dLabel, `운행 ${formatNumber(totals.hours, 1)}h · ${formatNumber(totals.km, 1)}km`, nextNote].filter(Boolean).join(' · ');
     const detail = `기준일 ${last.date} 이후 운행기록 합계 (실시 당일 제외). 운행 입력 ${totals.logCount}일`;
     return {
       key,
@@ -2577,7 +2605,7 @@
   }
 
   function saveMaintenance() {
-    const type = $('inp-maint-type').value;
+    const type = normalizeMaintType($('inp-maint-type').value);
     if (!type) {
       showToast('정비 종류를 선택해주세요.');
       return;
@@ -2608,6 +2636,7 @@
       editingMaintId = null;
       fillMaintForm(null);
       renderMaintRecordList();
+      renderRecordServiceIntervalAlerts();
       showToast(existing ? '정비 기록을 수정했습니다.' : '정비 기록을 저장했습니다.');
       renderAlertsBadge();
     }
