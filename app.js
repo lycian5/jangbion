@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.12';
+  const APP_VERSION = '3.6.13';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -1503,9 +1503,9 @@
         items.push({
           id: 'missing-usage',
           level: 'warn',
-          title: '사용 기록 미입력',
+          title: '운행 기록 미입력',
           meta: '오늘 계기·운행 기록이 없습니다',
-          detail: '사용 탭에서 입력하세요.',
+          detail: '운행 기록에서 입력하세요.',
           action: () => { closeAlertsHub(); switchTab('usage'); }
         });
       }
