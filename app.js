@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.13';
+  const APP_VERSION = '3.6.14';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -581,6 +581,7 @@
   let currentWorkPhotos = [];
   let editingWorkId = null;
   let editingMaintId = null;
+  let editingFuelId = null;
   let currentFuelReceipt = null;
   let currentInspectionPhoto = null;
   let currentFaultPhoto = null;
@@ -1520,32 +1521,6 @@
         });
       }
     }
-    SERVICE_ALERT_KEYS.forEach(key => {
-      const alert = buildServiceIntervalAlert(key, DB.currentEquipmentId, selectedDate());
-      if (!alert) return;
-      // 알림: 정비 종류별 주기 표시 (입력 폼이 아님)
-      const show = alert.level === 'warn' || alert.level === 'none' || alert.level === 'ok';
-      if (!show) return;
-      items.push({
-        id: `service-${key}`,
-        level: alert.level === 'ok' ? 'ok' : (alert.level === 'none' ? 'none' : 'warn'),
-        title: `정비 주기 · ${alert.title}`,
-        meta: alert.meta,
-        detail: alert.detail,
-        action: () => openMaintForServiceType(SERVICE_TRACK_TYPES[key].type)
-      });
-    });
-    const fault = typeof blockingFault === 'function' ? blockingFault() : null;
-    if (fault) {
-      items.push({
-        id: 'fault',
-        level: 'warn',
-        title: '운행 제한 · 고장',
-        meta: fault.symptom || '미해결 고장',
-        detail: '홈에서 상태를 확인하세요.',
-        action: () => { closeAlertsHub(); navigateBottom('home'); }
-      });
-    }
     return items;
   }
 
@@ -1579,7 +1554,7 @@
       list.replaceChildren();
       const empty = document.createElement('div');
       empty.className = 'alerts-hub-empty';
-      empty.textContent = '표시할 알림이 없습니다. 오늘 기록과 정비 주기가 정상입니다.';
+      empty.textContent = '운행·작업 기록이 모두 입력되어 있습니다.';
       list.append(empty);
       return;
     }
@@ -2383,7 +2358,12 @@
       const row = document.createElement('div'); row.className = 'work-record-item';
       const copy = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = `${index + 1}. ${record.workType || '작업'} · ${numberOr(record.hours).toFixed(1)}시간`;
-      const detail = document.createElement('span'); detail.textContent = [record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '', record.company, record.place || record.project || record.memo || '상세 없음'].filter(Boolean).join(' · ');
+      const detail = document.createElement('span');
+      detail.textContent = [
+        record.startTime && record.endTime ? `${record.startTime}~${record.endTime}` : '',
+        record.company ? `작업 회사 ${record.company}` : '작업 회사 미입력',
+        record.memo ? `메모 ${record.memo}` : ''
+      ].filter(Boolean).join(' · ');
       const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'work-record-edit'; edit.textContent = '수정'; edit.addEventListener('click', () => editWorkRecord(record.id));
       copy.append(title, detail); row.append(copy, edit); return row;
     }));
@@ -2490,8 +2470,30 @@
     }
   }
 
+  function fillFuelForm(record = null) {
+    const isQuick = Boolean(record?.quick);
+    ['chk-fuel-quick', 'chk-fuel-quick-summary'].map($).filter(Boolean).forEach(input => { input.checked = isQuick; });
+    setFuelFormDisabled(isQuick);
+    $('inp-liters').value = record && !isQuick ? (record.liters ?? '') : '';
+    $('inp-unit-price').value = record && !isQuick ? (record.unitPrice ?? '') : '';
+    $('inp-fuel-meter').value = record && record.meterValue != null && record.meterValue !== '' ? record.meterValue : '';
+    $('inp-fuel-provider').value = record?.provider || '';
+    $('inp-fuel-memo').value = record?.memo || '';
+    currentFuelReceipt = record?.receipt || null;
+    showPhotoPreview('fuel-receipt-preview', 'fuel-receipt-img', currentFuelReceipt);
+    $('btn-save-fuel').textContent = record && !isQuick ? '주유 기록 수정 저장' : '주유 기록 저장';
+    updateFuelPreview();
+  }
+
   function loadFuelTab() {
+    const editing = editingFuelId ? equipmentLogs(DB.fuelLogs).find(item => item.id === editingFuelId) : null;
+    if (editingFuelId && !editing) editingFuelId = null;
+    if (editing) {
+      fillFuelForm(editing);
+      return;
+    }
     syncFuelQuickUI();
+    fillFuelForm(null);
     const latest = equipmentLogs(DB.fuelLogs).filter(item => item.date === selectedDate() && !item.quick).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
     currentFuelReceipt = latest?.receipt || null;
     showPhotoPreview('fuel-receipt-preview', 'fuel-receipt-img', currentFuelReceipt);
@@ -2514,14 +2516,19 @@
       showToast('주유량을 올바르게 입력해주세요.');
       return;
     }
+    const existing = editingFuelId ? equipmentLogs(DB.fuelLogs).find(item => item.id === editingFuelId) : null;
     const record = {
-      id: uid('fuel'), equipmentId: DB.currentEquipmentId, date: selectedDate(), liters, unitPrice,
+      id: existing?.id || uid('fuel'), equipmentId: DB.currentEquipmentId, date: selectedDate(), liters, unitPrice,
       amount: Math.round(liters * unitPrice), meterValue: $('inp-fuel-meter').value === '' ? null : numberOr($('inp-fuel-meter').value),
       provider: $('inp-fuel-provider').value.trim().slice(0, 120), receipt: currentFuelReceipt,
       memo: $('inp-fuel-memo').value.trim().slice(0, 300),
-      quick: false, createdAt: new Date().toISOString()
+      quick: false, createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
     };
-    if (commit(next => next.fuelLogs.push(record))) {
+    if (commit(next => {
+      const index = next.fuelLogs.findIndex(item => item.id === record.id);
+      if (index >= 0) next.fuelLogs[index] = record; else next.fuelLogs.push(record);
+    })) {
+      editingFuelId = null;
       $('inp-liters').value = '';
       $('inp-unit-price').value = '';
       $('inp-fuel-meter').value = '';
@@ -2529,8 +2536,9 @@
       $('inp-fuel-memo').value = '';
       currentFuelReceipt = null;
       showPhotoPreview('fuel-receipt-preview', 'fuel-receipt-img', null);
+      $('btn-save-fuel').textContent = '주유 기록 저장';
       updateFuelPreview();
-      showToast('주유 기록을 저장했습니다.');
+      showToast(existing ? '주유 기록을 수정했습니다.' : '주유 기록을 저장했습니다.');
       navigateBottom('home');
     }
   }
@@ -2791,21 +2799,35 @@
     container.replaceChildren(...weekdays, ...blanks, ...days);
   }
 
+  function recordHasPhoto(item, type) {
+    if (type === 'usage' || type === 'maint') return Boolean(item?.photo);
+    if (type === 'fuel') return Boolean(item?.receipt);
+    if (type === 'work') {
+      const photos = Array.isArray(item?.photos) ? item.photos : (item?.photo ? [item.photo] : []);
+      return photos.some(Boolean);
+    }
+    return null;
+  }
+
   function historyRecords() {
     const month = $('history-month').value;
     const type = $('history-type').value;
     const records = [];
     const include = date => !month || date.startsWith(month);
     if (type === 'all' || type === 'off') equipmentLogs(DB.dayStatuses).filter(item => include(item.date)).forEach(item => {
-      records.push({ type: 'off', id: item.id, date: item.date, createdAt: item.updatedAt || item.createdAt, icon: 'calendar', title: dayStatusLabel(item), detail: '계기값 입력 없이 운행 없음 처리', value: '완료' });
+      records.push({ type: 'off', id: item.id, date: item.date, createdAt: item.updatedAt || item.createdAt, icon: 'calendar', title: dayStatusLabel(item), detail: '계기값 입력 없이 운행 없음 처리', value: '완료', hasPhoto: null });
     });
     if (type === 'all' || type === 'usage') equipmentLogs(DB.dailyLogs).filter(item => include(item.date)).forEach(item => {
       const usage = computeDailyUsage(item.date);
-      records.push({ type: 'usage', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'gauge', title: '운행 기록', detail: item.memo, value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km` });
+      records.push({ type: 'usage', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'gauge', title: '운행 기록', detail: item.memo, value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km`, hasPhoto: recordHasPhoto(item, 'usage') });
     });
-    if (type === 'all' || type === 'work') equipmentLogs(DB.workLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'work', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'clipboard', title: '작업 기록', detail: item.memo, value: `${numberOr(item.hours).toFixed(1)}h` }));
-    if (type === 'all' || type === 'fuel') equipmentLogs(DB.fuelLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'fuel', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'fuel', title: '주유 기록', detail: item.quick ? '상세 없이 체크' : item.memo, value: item.quick ? '완료' : `${numberOr(item.liters).toFixed(1)}L` }));
-    if (type === 'all' || type === 'maint') equipmentLogs(DB.maintLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'maint', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'wrench', title: item.type || '정비 기록', detail: item.detail, value: `${formatNumber(item.cost)}원` }));
+    if (type === 'all' || type === 'work') equipmentLogs(DB.workLogs).filter(item => include(item.date)).forEach(item => records.push({
+      type: 'work', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'clipboard', title: '작업 기록',
+      detail: [item.company ? `작업 회사 ${item.company}` : '작업 회사 미입력', item.memo ? `메모 ${item.memo}` : ''].filter(Boolean).join(' · '),
+      value: `${numberOr(item.hours).toFixed(1)}h`, hasPhoto: recordHasPhoto(item, 'work')
+    }));
+    if (type === 'all' || type === 'fuel') equipmentLogs(DB.fuelLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'fuel', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'fuel', title: '주유 기록', detail: item.quick ? '상세 없이 체크' : item.memo, value: item.quick ? '완료' : `${numberOr(item.liters).toFixed(1)}L`, hasPhoto: recordHasPhoto(item, 'fuel') }));
+    if (type === 'all' || type === 'maint') equipmentLogs(DB.maintLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'maint', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'wrench', title: item.type || '정비 기록', detail: item.detail, value: `${formatNumber(item.cost)}원`, hasPhoto: recordHasPhoto(item, 'maint') }));
     return records.sort((a, b) => b.date.localeCompare(a.date) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
   }
 
@@ -2822,6 +2844,8 @@
     container.replaceChildren(...records.map(record => {
       const item = document.createElement('div');
       item.className = 'history-item';
+      item.setAttribute('role', 'button');
+      item.tabIndex = 0;
       const icon = document.createElement('div');
       icon.className = 'history-icon';
       icon.append(svgIcon(record.icon));
@@ -2833,6 +2857,12 @@
       meta.className = 'history-meta';
       meta.textContent = record.detail || '메모 없음';
       content.append(title, meta);
+      if (record.hasPhoto != null) {
+        const photo = document.createElement('div');
+        photo.className = `history-photo ${record.hasPhoto ? 'has' : 'none'}`;
+        photo.textContent = record.hasPhoto ? '사진 있음' : '사진 없음';
+        content.append(photo);
+      }
       const right = document.createElement('div');
       const value = document.createElement('div');
       value.className = 'history-value';
@@ -2842,11 +2872,38 @@
       remove.type = 'button';
       remove.textContent = '삭제';
       remove.style.marginTop = '6px';
-      remove.addEventListener('click', () => deleteHistoryRecord(record.type, record.id));
+      remove.addEventListener('click', event => {
+        event.stopPropagation();
+        deleteHistoryRecord(record.type, record.id);
+      });
       right.append(value, remove);
       item.append(icon, content, right);
+      item.addEventListener('click', () => openHistoryRecord(record));
+      item.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openHistoryRecord(record);
+        }
+      });
       return item;
     }));
+  }
+
+  function setSelectedDate(date) {
+    if (!isDateString(date) || !$('dateSelect')) return;
+    $('dateSelect').value = date;
+    updateDayBadge();
+  }
+
+  function openHistoryRecord(record) {
+    if (!record?.type) return;
+    setSelectedDate(record.date);
+    editingWorkId = record.type === 'work' ? record.id : null;
+    editingMaintId = record.type === 'maint' ? record.id : null;
+    editingFuelId = record.type === 'fuel' ? record.id : null;
+    const tab = { usage: 'usage', off: 'usage', work: 'work', fuel: 'fuel', maint: 'maint' }[record.type] || 'usage';
+    switchTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function deleteHistoryRecord(type, id) {
