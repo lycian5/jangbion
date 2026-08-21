@@ -5,7 +5,7 @@
   const PLAN_NOTICE_KEY = 'buildnote_free_plan_notice_v1';
   const FONT_SIZE_KEY = 'jangbion_font_size_v1';
   const FONT_SIZE_OPTIONS = ['small', 'normal', 'large', 'xlarge', 'xxlarge'];
-  const APP_VERSION = '3.6.10';
+  const APP_VERSION = '3.6.11';
   const SUBMISSION_ROOM_KEY = 'jangbion_submission_room_url_v1';
   const SW_UPDATE_INTERVAL_MS = 30 * 60 * 1000;
   const DB_VERSION = 8;
@@ -2801,7 +2801,7 @@
     });
     if (type === 'all' || type === 'usage') equipmentLogs(DB.dailyLogs).filter(item => include(item.date)).forEach(item => {
       const usage = computeDailyUsage(item.date);
-      records.push({ type: 'usage', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'gauge', title: '사용 기록', detail: item.memo, value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km` });
+      records.push({ type: 'usage', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'gauge', title: '운행 기록', detail: item.memo, value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km` });
     });
     if (type === 'all' || type === 'work') equipmentLogs(DB.workLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'work', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'clipboard', title: '작업 기록', detail: item.memo, value: `${numberOr(item.hours).toFixed(1)}h` }));
     if (type === 'all' || type === 'fuel') equipmentLogs(DB.fuelLogs).filter(item => include(item.date)).forEach(item => records.push({ type: 'fuel', id: item.id, date: item.date, createdAt: item.createdAt || item.created_at, icon: 'fuel', title: '주유 기록', detail: item.quick ? '상세 없이 체크' : item.memo, value: item.quick ? '완료' : `${numberOr(item.liters).toFixed(1)}L` }));
@@ -2949,7 +2949,7 @@
       const equipment = equipmentMap.get(item.equipmentId);
       if (!equipment) return;
       const usage = computeEquipmentUsage(item.date, item.equipmentId);
-      records.push({ type: 'usage', date: item.date, equipment, icon: 'gauge', title: '사용', detail: item.memo || '메모 없음', value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km`, createdAt: item.createdAt || item.created_at });
+      records.push({ type: 'usage', date: item.date, equipment, icon: 'gauge', title: '운행', detail: item.memo || '메모 없음', value: `${usage.hours.toFixed(1)}h · ${usage.km.toFixed(1)}km`, createdAt: item.createdAt || item.created_at });
     });
     if (type === 'all' || type === 'work') DB.workLogs.filter(allowed).forEach(item => {
       const equipment = equipmentMap.get(item.equipmentId); if (!equipment) return;
